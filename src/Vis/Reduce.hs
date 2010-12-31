@@ -21,21 +21,28 @@ import Control.Monad.Trans.Maybe
 snoc :: [a] -> a -> [a]
 snoc xs x = xs ++ [x]
 
-reduceBuiltin :: BuiltinFun -> Node s -> [Node s] -> Vis s ()
-reduceBuiltin IntPlus node actuals = 
-  when (length actuals == 2) $ do
-    mapM_ reduce actuals
+reduceBuiltin :: BuiltinFun -> Node s -> [Node s] -> Vis s Bool
+reduceBuiltin IntPlus node actuals 
+  | length actuals == 2 = do
+    mapM_ reduceFully actuals
     let [left, right] = actuals
     IntLit n <- readPayload left
     IntLit m <- readPayload right
     writePayload node $ IntLit $ n + m
-
-reduce :: Node s -> Vis s ()
+    return True
+  | otherwise = return False
+                
+reduceFully :: Node s -> Vis s ()    
+reduceFully node = do
+  reduced <- reduce node
+  when reduced $ reduceFully node
+    
+reduce :: Node s -> Vis s Bool
 reduce node = do
   payload <- readPayload node
   case payload of
-    PartialConApp _ _ -> return ()
-    IntLit _ -> return ()
+    PartialConApp _ _ -> return False
+    IntLit _ -> return False
     App e f -> do
       reduce e
       payloadFun <- readPayload e
@@ -44,20 +51,24 @@ reduce node = do
           writePayload node $ PartialConApp con (snoc ns f)
         PartialFunApp fun ns ->
           writePayload node $ PartialFunApp fun (snoc ns f)
-      reduce node
+      -- reduce node
+      return True
     ParamRef x -> fail $ unwords ["Unfilled parameter:", show x]
     PartialFunApp fun actuals -> do
       case fun of
-        BuiltinFun op -> reduceBuiltin op node actuals
+        BuiltinFun op -> do
+          reduceBuiltin op node actuals
         Matches f arity -> do
-          when (length actuals == arity) $ do
-            matches <- fromJust <$> lookupMatches f
-            node' <- applyFunction matches actuals
-            case node' of
-              Nothing -> return ()
-              Just node' -> do
-                writePayload node =<< readPayload node'
-                reduce node
+          if length actuals == arity
+            then do
+              matches <- fromJust <$> lookupMatches f
+              node' <- applyFunction matches actuals
+              case node' of
+                Nothing -> return False
+                Just node' -> do
+                  writePayload node =<< readPayload node'
+                  return True
+            else return False      
 
 applyFunction :: [Match s] -> [Node s] -> Vis s (Maybe (Node s))
 applyFunction matches actuals = do

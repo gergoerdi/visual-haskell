@@ -108,7 +108,8 @@ test = do
               (H.HsVar $ H.UnQual $ H.HsIdent "length")
               (H.HsList $ map (H.HsLit . H.HsInt) [1..5])
     img <- liftST $ showNode 0 lst
-    withFunctions (Map.fromList [(Name $ H.HsIdent "length", matches)]) $ reduce lst
+    withFunctions (Map.fromList [(Name $ H.HsIdent "length", matches)]) $ do
+      replicateM_ 3 $ reduce lst
     img' <- liftST $ showNode 0 lst  
     return $ unlines [img, img']
 
