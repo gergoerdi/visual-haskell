@@ -12,17 +12,26 @@ import Data.STRef
 import Control.Monad.State (StateT, evalStateT)
 import Data.Function (on)
 import Data.Maybe
+import Language.Haskell.Pretty
+
+builtinFromName (Name (H.HsSymbol "+")) = Just IntPlus
+builtinFromName _ = Nothing
 
 fromExpr (H.HsLit (H.HsInt n)) = mkNode (IntLit n)
-fromExpr (H.HsApp e f) = mkNode =<< (App <$> fromExpr e <*> fromExpr f)
-fromExpr (H.HsVar (H.UnQual op@(H.HsSymbol s))) = do
-  mkNode $ PartialFunApp op []
+fromExpr (H.HsApp f x) = mkNode =<< (App <$> fromExpr f <*> fromExpr x)
 fromExpr (H.HsVar x) = do
   x' <- fromName x
-  bind <- lookupBind x'
-  case bind of
-    Nothing -> mkNode $ VarRef x'
-    Just node -> return node
+  case builtinFromName x' of
+    Just builtin -> mkNode $ PartialFunApp (BuiltinFun builtin) []
+    Nothing -> do
+      bind <- lookupBind x'
+      case bind of
+        Nothing -> do
+          arity <- lookupArity x'
+          case arity of
+            Just arity -> mkNode $ PartialFunApp (Matches x' arity) []
+            Nothing -> mkNode $ ParamRef x'
+        Just node -> return node
 fromExpr (H.HsLet decls body) = do
   vars <- mapM varFromDecl decls
   withVars vars $ do    
@@ -35,13 +44,20 @@ fromExpr (H.HsLet decls body) = do
   -- where kvFromDecl (H.HsPatBind _ (H.HsPVar x) (H.HsUnGuardedRhs expr) []) = do
   --         node <- mkNode_
   --         return (x, node)
-  where varFromDecl (H.HsPatBind _ (H.HsPVar x) _ _) = return x
+  where varFromDecl (H.HsPatBind _ (H.HsPVar x) _ _) = return $ Name x
         nodeFromDecl (H.HsPatBind _ (H.HsPVar x) (H.HsUnGuardedRhs expr) []) = do
           node <- fromExpr expr
-          return (x, node)
-          
+          return (Name x, node)          
 fromExpr (H.HsCon c) = mkNode =<< (PartialConApp <$> fromName c <*> return [])
-fromExpr e = unsupported e
+fromExpr (H.HsList es) = fromExpr $ foldr cons nil es
+  where cons x xs = H.HsApp (H.HsApp (H.HsCon $ H.Special $ H.HsCons) x) xs
+        nil =  H.HsCon $ H.Special $ H.HsListCon
+fromExpr (H.HsInfixApp left op right) = fromExpr $ H.HsApp (H.HsApp f left) right
+  where f = case op of
+          H.HsQVarOp var -> H.HsVar var
+          H.HsQConOp con -> H.HsCon con
+fromExpr e = unsupported $ prettyPrint e
 
-fromName (H.UnQual n) = return n
+fromName (H.UnQual name) = return $ Name name
+fromName (H.Special special) = return $ Special special
 fromName n = unsupported "qualified name"

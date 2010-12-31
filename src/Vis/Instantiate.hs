@@ -22,7 +22,7 @@ cloneNode :: Node s -> Cloner s (Node s)
 cloneNode node = do
   payload <- lift $ readPayload node
   case payload of
-    VarRef x -> do
+    ParamRef x -> do
       actual <- asks (Map.lookup x)
       case actual of
         Just actual -> return actual
@@ -48,4 +48,4 @@ clonePayload (IntLit n) = return $ IntLit n
 clonePayload (App e f) = App <$> cloneNode e <*> cloneNode f
 clonePayload (PartialFunApp f ns) = PartialFunApp f <$> mapM cloneNode ns
 clonePayload (PartialConApp c ns) = PartialConApp c <$> mapM cloneNode ns
-clonePayload (VarRef x) = return $ VarRef x
+clonePayload (ParamRef x) = return $ ParamRef x

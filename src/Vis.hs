@@ -33,7 +33,7 @@ showNode depth _ = return $ replicate depth ' ' ++ "..."
 
 showPayload :: Int -> Payload s -> ST s String
 showPayload depth Uninitialized = return "<unfilled>"
-showPayload depth (VarRef x) = return $ unwords ["VarRef", show x]
+showPayload depth (ParamRef x) = return $ unwords ["ParamRef", show x]
 showPayload depth (IntLit n) = return $ unwords ["IntLit", show n]
 showPayload depth (App e f) = do
   e' <- showNode (succ depth) e
@@ -41,10 +41,14 @@ showPayload depth (App e f) = do
   return $ unlines' ["App", e', f']
 showPayload depth (PartialFunApp f ns) = do
   ns' <- mapM (showNode $ succ depth) ns
-  return $ unlines' (unwords ["PartialFunApp", show f]:ns')
+  f' <- showFunction f
+  return $ unlines' (unwords ["PartialFunApp", f']:ns')
 showPayload depth (PartialConApp c ns) = do
   ns' <- mapM (showNode $ succ depth) ns
   return $ unlines' (unwords ["PartialConApp", show c]:ns')
+    
+showFunction (BuiltinFun builtin) = return $ show builtin    
+showFunction (Matches f arity) = return $ concat [show f, '#':show arity]
     
 unlines' = intercalate "\n"
     
@@ -56,14 +60,14 @@ test = do
             (H.HsApp 
              (H.HsVar $ H.UnQual $ H.HsSymbol "+")
              (H.HsLit (H.HsInt 35)))
-            (H.HsLit (H.HsInt 7))                 
+            (H.HsLit (H.HsInt 7))
   
   let f = H.UnQual $ H.HsIdent "f"
       x = H.UnQual $ H.HsIdent "x"
       xs = H.UnQual $ H.HsIdent "xs"
       -- _map = H.UnQual $ H.HsIdent "map"
-      cons = H.UnQual $ H.HsSymbol ":"
-      nil = H.UnQual $ H.HsSymbol "[]"
+      cons = H.Special $ H.HsCons
+      nil = H.Special $ H.HsListCon
   -- node <- let ones = H.HsIdent "ones"
   --             expr = H.HsApp
   --                      (H.HsApp (H.HsCon cons) (H.HsVar x))
@@ -87,35 +91,29 @@ test = do
                                   
   let plus = H.UnQual $ H.HsSymbol "+"
       
-  matches <- do
-    let lengthFormals1 = [H.HsPApp cons [H.HsPVar $ H.HsIdent "x", H.HsPVar $ H.HsIdent "xs"]]
-    lengthNode1 <- fromExpr $ 
-                    H.HsApp
-                      (H.HsApp (H.HsVar plus) (H.HsLit (H.HsInt 1)))
+  withFunctionForwards [(Name $ H.HsIdent "length", 1)] $ do
+    matches <- do
+      let lengthFormals1 = [H.HsPInfixApp (H.HsPVar $ H.HsIdent "x") cons (H.HsPVar $ H.HsIdent "xs")]
+      lengthNode1 <- fromExpr $ H.HsInfixApp 
+                      (H.HsLit (H.HsInt 1)) 
+                      (H.HsQVarOp plus) 
                       (H.HsApp (H.HsVar $ H.UnQual $ H.HsIdent "length") (H.HsVar xs))
   
-    let lengthFormals2 = [H.HsPApp nil []]
-    lengthNode2 <- fromExpr $ H.HsLit (H.HsInt 0)
-    return [Match lengthFormals1 lengthNode1, Match lengthFormals2 lengthNode2]
+      let lengthFormals2 = [H.HsPList []]
+      lengthNode2 <- fromExpr $ H.HsLit (H.HsInt 0)
+      return [Match lengthFormals1 lengthNode1, Match lengthFormals2 lengthNode2]
                 
-  lst <- fromExpr $ 
-          H.HsApp 
-            (H.HsVar $ H.UnQual $ H.HsIdent "length")
-            (toList $ map (H.HsLit . H.HsInt) [1..5])
-  img <- liftST $ showNode 0 lst
-  withFunctions (Map.fromList [(H.HsIdent "length", matches)]) $ reduce lst
-  img' <- liftST $ showNode 0 lst  
-  
-  -- return $ unlines [img1, img2]
-  -- -- return img
+    lst <- fromExpr $ 
+            H.HsApp 
+              (H.HsVar $ H.UnQual $ H.HsIdent "length")
+              (H.HsList $ map (H.HsLit . H.HsInt) [1..5])
+    img <- liftST $ showNode 0 lst
+    withFunctions (Map.fromList [(Name $ H.HsIdent "length", matches)]) $ reduce lst
+    img' <- liftST $ showNode 0 lst  
+    return $ unlines [img, img']
 
-  -- img1' <- liftST $ showNode 0 $ sum
-  -- reduce sum
-  -- img2' <- liftST $ showNode 0 $ sum
-  return $ unlines [img, img']
-
-toList = foldr (\ e f -> H.HsApp (H.HsApp cons e) f) nil
-  where cons = H.HsCon $ H.UnQual $ H.HsSymbol ":"
-        nil =  H.HsCon $ H.UnQual $ H.HsSymbol "[]"
+toList = foldr cons nil
+  where cons x xs = H.HsApp (H.HsApp (H.HsCon $ H.Special $ H.HsCons) x) xs
+        nil =  H.HsCon $ H.Special $ H.HsListCon
 
 main = putStrLn $ runST $ runVis test
