@@ -18,8 +18,6 @@ import Control.Monad.Writer
 import Data.Maybe
 import Control.Monad.Trans.Maybe
 
-import Debug.Trace
-
 snoc :: [a] -> a -> [a]
 snoc xs x = xs ++ [x]
 
@@ -48,7 +46,7 @@ reduce node = do
     -- ConApp _ _ -> return False
     -- IntLit _ -> return False
     App f arg -> do
-      reduce f
+      reduceFully f
       payloadFun <- readPayload f
       case payloadFun of
         ConApp con args ->
@@ -61,14 +59,13 @@ reduce node = do
     ParamRef x -> fail $ unwords ["Unfilled parameter:", show x]
     BuiltinFunApp op args -> reduceBuiltin op node args
     SwitchApp arity matches args | length args == arity -> do
-      trace "reduce" $ return ()
       node' <- applySwitch matches args
       case node' of
         Nothing -> return False
         Just node' -> do
           writePayload node =<< readPayload node'
           return True
-    _ -> return False
+    _ -> return False    
 
 applySwitch :: [Match s] -> [Node s] -> Vis s (Maybe (Node s))
 applySwitch matches args = do
@@ -94,16 +91,21 @@ match pats ns = fmap (Map.fromList) <$> (runMaybeT $ execWriterT $ zipWithM_ col
         collect H.HsPWildCard node = return ()
         collect (H.HsPParen pat) node = collect pat node
         collect (H.HsPLit (H.HsInt n)) node = do 
-          lift $ lift $ reduce node
-          IntLit n' <- lift $ lift $ readPayload node
+          (lift . lift) $ reduce node
+          IntLit n' <- (lift . lift) $ readPayload node
           guard $ n' == n
           return ()
         collect (H.HsPApp con pats) node = do          
           con' <- fromName con
-          lift $ lift $ reduce node
-          ConApp conActual nodes <- lift $ lift $ readPayload node
+          (lift . lift) $ reduce node
+          ConApp conActual nodes <- (lift . lift) $ readPayload node
           guard $ conActual == con'
           zipWithM_ collect pats nodes
+        collect (H.HsPTuple pats) node = do
+          (lift . lift) $ reduceFully node
+          ConApp conActual nodes <- (lift . lift) $ readPayload node
+          guard $ conActual == Special (H.HsTupleCon (length pats))
+          zipWithM_ collect pats nodes          
         collect (H.HsPList pats) node = collect (foldr cons nil pats) node
           where cons x xs = H.HsPApp (H.Special $ H.HsCons) [x, xs]
                 nil =  H.HsPApp (H.Special $ H.HsListCon) []

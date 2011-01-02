@@ -46,8 +46,8 @@ showPayload depth (BuiltinFunApp op args) = do
   return $ unlines' (unwords ["BuiltinFunApp", show op]:imgs)
 showPayload depth (SwitchApp arity matches args) = do  
   patimgs <- forM matches $ \(Match pats node) -> do
-    img <- showNode (succ (succ depth)) node
-    return $ unlines [replicate (succ depth) ' ' ++ concatMap prettyPrint pats, img]    
+    img <- showNode (succ (succ (succ depth))) node
+    return $ unlines' [replicate (succ (succ depth)) ' ' ++ unwords (map show pats) ++ " ->", img]    
   imgs <- mapM (showNode $ succ depth) args
   return $ unlines' (unwords ["SwitchApp", show arity]:(patimgs ++ imgs))
 showPayload depth (ConApp c ns) = do
@@ -71,11 +71,24 @@ test = do
              "",
              "ones = 1:ones",
              "",
+             "steppers k = let inc x = x + k",
+             "                 dec x = x - k",
+             "             in (inc, dec)",
+             "",             
+             "fst (x, y) = x",
+             "snd (x, y) = y",
+             "",
              "take 0 _ = []",
              "take _ [] = []",
              "take n (x:xs) = x:take (n-1) xs",
              "",
-             "main = take (length' [1,2,3,4,5]) ones"]  
+             -- "main = take (length' [1,2,3,4,5]) ones",
+             "main = let xy = steppers 3",
+             "           inc = fst xy",
+             "           dec = snd xy",
+             "       in inc 4",
+             ""
+             ]  
       ParseOk mod = parseModule src
       H.HsModule _ _ _ _ decls = mod  
   withVars (concatMap bindsFromDecl decls) $ do
@@ -83,7 +96,7 @@ test = do
       (x, node) <- fromDecl decl      
       setVar x node
     Just main <- lookupBind (Name $ H.HsIdent "main")
-    unlines <$> replicateM 25 (reduce main >> liftST (showNode 0 main) )
+    unlines <$> replicateM 4 (reduce main >> liftST (showNode 0 main) )
   
 toList = foldr cons nil
   where cons x xs = H.HsApp (H.HsApp (H.HsCon $ H.Special $ H.HsCons) x) xs

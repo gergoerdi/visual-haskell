@@ -20,21 +20,25 @@ builtinFromName (Name (H.HsSymbol "+")) = Just IntPlus
 builtinFromName _ = Nothing
 
 bindsFromDecl :: H.HsDecl -> [Name]
-bindsFromDecl (H.HsPatBind _ pat _ _) = execWriter $ bindsFromPat pat
+bindsFromDecl (H.HsPatBind _ pat _ _) = bindsFromPat pat
 bindsFromDecl (H.HsFunBind ms) = [fst $ bindFromMatches ms]
+
+withDecls :: [H.HsDecl] -> Vis s a -> Vis s a
+withDecls decls = withVars $ concatMap bindsFromDecl decls
 
 bindFromMatches :: [H.HsMatch] -> (Name, Int)
 bindFromMatches ((H.HsMatch _ f pats _ _):_) = (Name f, arity)
   where arity = length pats
 
-bindsFromPat (H.HsPVar x) = tell [Name x]
-bindsFromPat (H.HsPInfixApp left _ right) = bindsFromPat left >> bindsFromPat right
-bindsFromPat (H.HsPApp _ pats) = mapM_ bindsFromPat pats
-bindsFromPat (H.HsPTuple pats) = mapM_ bindsFromPat pats
-bindsFromPat (H.HsPList pats) = mapM_ bindsFromPat pats
-bindsFromPat (H.HsPParen pat) = bindsFromPat pat
-bindsFromPat (H.HsPAsPat x pat) = tell [Name x] >> bindsFromPat pat
-bindsFromPat _ = return ()
+bindsFromPat = execWriter . collect
+  where collect (H.HsPVar x) = tell [Name x]
+        collect (H.HsPInfixApp left _ right) = collect left >> collect right
+        collect (H.HsPApp _ pats) = mapM_ collect pats
+        collect (H.HsPTuple pats) = mapM_ collect pats
+        collect (H.HsPList pats) = mapM_ collect pats
+        collect (H.HsPParen pat) = collect pat
+        collect (H.HsPAsPat x pat) = tell [Name x] >> collect pat
+        collect _ = return ()
 
 fromDecl :: H.HsDecl -> Vis s (Name, (Node s))
 fromDecl (H.HsPatBind _ (H.HsPVar x) (H.HsUnGuardedRhs expr) []) = do
@@ -51,6 +55,9 @@ fromExpr :: H.HsExp -> Vis s (Node s)
 fromExpr (H.HsParen expr) = fromExpr expr
 fromExpr (H.HsLit (H.HsInt n)) = mkNode (IntLit n)
 fromExpr (H.HsApp f x) = mkNode =<< (App <$> fromExpr f <*> fromExpr x)
+fromExpr (H.HsLambda _ pats expr) = do
+  node <- fromExpr expr  
+  mkNode $ SwitchApp (length pats) [Match pats node] []
 fromExpr (H.HsVar x) = do
   x' <- fromName x
   case builtinFromName x' of
@@ -61,7 +68,7 @@ fromExpr (H.HsVar x) = do
         Just node -> return node
         Nothing -> mkNode $ ParamRef x'
 fromExpr (H.HsLet decls body) = do
-  withVars (concatMap bindsFromDecl decls) $ do        
+  withDecls decls $ do
     forM_ decls $ \decl -> do
       (x, node) <- fromDecl decl      
       setVar x node
@@ -70,6 +77,7 @@ fromExpr (H.HsCon c) = mkNode =<< (ConApp <$> fromName c <*> return [])
 fromExpr (H.HsList es) = fromExpr $ foldr cons nil es
   where cons x xs = H.HsApp (H.HsApp (H.HsCon $ H.Special $ H.HsCons) x) xs
         nil =  H.HsCon $ H.Special $ H.HsListCon
+fromExpr (H.HsTuple es) = mkNode =<< (ConApp (Special (H.HsTupleCon (length es))) <$> mapM fromExpr es)
 fromExpr (H.HsInfixApp left op right) = fromExpr $ H.HsApp (H.HsApp f left) right
   where f = case op of
           H.HsQVarOp var -> H.HsVar var
