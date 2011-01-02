@@ -2,6 +2,7 @@ module Vis.Instantiate (instantiate, FormalMap) where
 
 import Vis.Node
 import Vis.Monad
+import Vis.FromSource
 
 import Control.Applicative
 import Control.Monad.Error
@@ -14,6 +15,11 @@ type NodeMap s = Map (Node s) (Node s)
 type FormalMap s = Map Name (Node s)
 
 type Cloner s a = RWST (FormalMap s) () (NodeMap s) (Vis s) a
+
+
+withoutVars :: [Name] -> Cloner s a -> Cloner s a
+withoutVars vars = local removeVars
+  where removeVars formals = foldl (flip Map.delete) formals vars
 
 instantiate :: FormalMap s -> Node s -> Vis s (Node s)
 instantiate actuals node = fst <$> (evalRWST (cloneNode node) actuals mempty)
@@ -51,4 +57,5 @@ clonePayload (SwitchApp arity matches actuals) = SwitchApp arity <$> mapM cloneM
 clonePayload (ConApp c nodes) = ConApp c <$> mapM cloneNode nodes
 clonePayload (ParamRef x) = return $ ParamRef x
 
-cloneMatch (Match pats body) = return $ Match pats body
+cloneMatch (Match pats body) = withoutVars (concatMap bindsFromPat pats) $ do 
+  Match pats <$> cloneNode body
