@@ -18,19 +18,23 @@ import Control.Monad.Writer
 import Data.Maybe
 import Control.Monad.Trans.Maybe
 
+import Debug.Trace
+
 snoc :: [a] -> a -> [a]
 snoc xs x = xs ++ [x]
 
+reduceBuiltinBinaryInt op node left right = do
+  reduceFully left
+  reduceFully right
+  IntLit n <- readPayload left
+  IntLit m <- readPayload right
+  writePayload node $ IntLit $ n `op` m
+  return True  
+
 reduceBuiltin :: BuiltinFun -> Node s -> [Node s] -> Vis s Bool
-reduceBuiltin IntPlus node actuals 
-  | length actuals == 2 = do
-    mapM_ reduceFully actuals
-    let [left, right] = actuals
-    IntLit n <- readPayload left
-    IntLit m <- readPayload right
-    writePayload node $ IntLit $ n + m
-    return True
-  | otherwise = return False
+reduceBuiltin IntPlus node [left, right] = reduceBuiltinBinaryInt (+) node left right
+reduceBuiltin IntMinus node [left, right] = reduceBuiltinBinaryInt (+) node left right
+reduceBuiltin _ _ _ = return False
                 
 reduceFully :: Node s -> Vis s ()    
 reduceFully node = do
@@ -41,38 +45,34 @@ reduce :: Node s -> Vis s Bool
 reduce node = do
   payload <- readPayload node
   case payload of
-    PartialConApp _ _ -> return False
-    IntLit _ -> return False
-    App e f -> do
-      reduce e
-      payloadFun <- readPayload e
+    -- ConApp _ _ -> return False
+    -- IntLit _ -> return False
+    App f arg -> do
+      reduce f
+      payloadFun <- readPayload f
       case payloadFun of
-        PartialConApp con ns ->
-          writePayload node $ PartialConApp con (snoc ns f)
-        PartialFunApp fun ns ->
-          writePayload node $ PartialFunApp fun (snoc ns f)
-      -- reduce node
+        ConApp con args ->
+          writePayload node $ ConApp con (snoc args arg)        
+        BuiltinFunApp op args ->
+          writePayload node $ BuiltinFunApp op (snoc args arg)
+        SwitchApp arity matches args ->
+          writePayload node $ SwitchApp arity matches (snoc args arg)          
       return True
     ParamRef x -> fail $ unwords ["Unfilled parameter:", show x]
-    PartialFunApp fun actuals -> do
-      case fun of
-        BuiltinFun op -> do
-          reduceBuiltin op node actuals
-        Matches f arity -> do
-          if length actuals == arity
-            then do
-              matches <- fromJust <$> lookupMatches f
-              node' <- applyFunction matches actuals
-              case node' of
-                Nothing -> return False
-                Just node' -> do
-                  writePayload node =<< readPayload node'
-                  return True
-            else return False      
+    BuiltinFunApp op args -> reduceBuiltin op node args
+    SwitchApp arity matches args | length args == arity -> do
+      trace "reduce" $ return ()
+      node' <- applySwitch matches args
+      case node' of
+        Nothing -> return False
+        Just node' -> do
+          writePayload node =<< readPayload node'
+          return True
+    _ -> return False
 
-applyFunction :: [Match s] -> [Node s] -> Vis s (Maybe (Node s))
-applyFunction matches actuals = do
-  matchRes <- firstMatch matches actuals
+applySwitch :: [Match s] -> [Node s] -> Vis s (Maybe (Node s))
+applySwitch matches args = do
+  matchRes <- firstMatch matches args
   case matchRes of
     Nothing -> return Nothing
     Just (formalMap, body) -> do
@@ -101,7 +101,7 @@ match pats ns = fmap (Map.fromList) <$> (runMaybeT $ execWriterT $ zipWithM_ col
         collect (H.HsPApp con pats) node = do          
           con' <- fromName con
           lift $ lift $ reduce node
-          PartialConApp conActual nodes <- lift $ lift $ readPayload node
+          ConApp conActual nodes <- lift $ lift $ readPayload node
           guard $ conActual == con'
           zipWithM_ collect pats nodes
         collect (H.HsPList pats) node = collect (foldr cons nil pats) node

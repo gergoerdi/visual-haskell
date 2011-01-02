@@ -19,18 +19,17 @@ data Node s = Node { nodeSerial :: Int,
 data Match s = Match { matchPatterns :: [HsPat],
                        matchBody :: Node s }
                
-data Function s = BuiltinFun BuiltinFun               
-                | Matches Name Int -- [Match s]
-
 data BuiltinFun = IntPlus
+                | IntMinus
                 deriving Show
                
 data Payload s = Uninitialized
                | ParamRef Name
                | IntLit Integer
                | App (Node s) (Node s)
-               | PartialFunApp (Function s) [Node s]               
-               | PartialConApp Name [Node s]
+               | BuiltinFunApp BuiltinFun [Node s]
+               | SwitchApp Int [Match s] [Node s]
+               | ConApp Name [Node s]
 
 instance Eq (Node s) where
   (==) = (==) `on` nodeSerial

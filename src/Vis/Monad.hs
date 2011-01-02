@@ -52,19 +52,19 @@ nextSerial = Vis (get <* modify succ)
 lookupBind :: Name -> Vis s (Maybe (Node s))
 lookupBind x = Vis $ asks (Map.lookup x . localVars)
 
-lookupMatches :: Name -> Vis s (Maybe [Match s])
-lookupMatches f = Vis $ asks (Map.lookup f . functionMap)
+-- lookupMatches :: Name -> Vis s (Maybe [Match s])
+-- lookupMatches f = Vis $ asks (Map.lookup f . functionMap)
 
-lookupArity :: Name -> Vis s (Maybe Int)
-lookupArity f = Vis $ do
-  matches <- asks (Map.lookup f . functionMap)
-  case matches of
-    Just ((Match pats _):_) -> return $ Just $ length pats
-    Nothing -> do
-      forward <- asks (Map.lookup f . forwardMap)
-      case forward of
-        Just arity -> return $ Just arity
-        Nothing -> return Nothing        
+-- lookupArity :: Name -> Vis s (Maybe Int)
+-- lookupArity f = Vis $ do
+--   matches <- asks (Map.lookup f . functionMap)
+--   case matches of
+--     Just ((Match pats _):_) -> return $ Just $ length pats
+--     Nothing -> do
+--       forward <- asks (Map.lookup f . forwardMap)
+--       case forward of
+--         Just arity -> return $ Just arity
+--         Nothing -> return Nothing        
 
 withVars :: [Name] -> Vis s a -> Vis s a
 withVars vars f = do
@@ -74,11 +74,18 @@ withVars vars f = do
   let addVars r =  r{ localVars = Map.union (localVars r) (Map.fromList newBinds) }
   Vis $ local addVars $ unVis f
 
-withFunctionForwards :: [(Name, Int)] -> Vis s a -> Vis s a
-withFunctionForwards forwards = Vis . local addForwards . unVis
-  where addForwards r = r{ forwardMap = Map.union (forwardMap r) (Map.fromList forwards) }
+setVar :: Name -> Node s -> Vis s ()
+setVar x node = do
+  payload <- liftST $ readSTRef $ nodePayload node
+  node' <- fromJust <$> lookupBind x
+  writePayload node' payload
 
-withFunctions :: FunctionMap s -> Vis s a -> Vis s a
-withFunctions functions = Vis . local addFunctions . unVis
-  where addFunctions r = r{ functionMap = Map.union (functionMap r) functions }
+
+-- withFunctionForwards :: [(Name, Int)] -> Vis s a -> Vis s a
+-- withFunctionForwards forwards = Vis . local addForwards . unVis
+--   where addForwards r = r{ forwardMap = Map.union (forwardMap r) (Map.fromList forwards) }
+
+-- withFunctions :: FunctionMap s -> Vis s a -> Vis s a
+-- withFunctions functions = Vis . local addFunctions . unVis
+--   where addFunctions r = r{ functionMap = Map.union (functionMap r) functions }
   

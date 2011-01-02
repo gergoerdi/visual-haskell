@@ -46,6 +46,7 @@ clonePayload :: Payload s -> Cloner s (Payload s)
 clonePayload Uninitialized = error "Consistency error: cloning an unfilled payload"
 clonePayload (IntLit n) = return $ IntLit n
 clonePayload (App e f) = App <$> cloneNode e <*> cloneNode f
-clonePayload (PartialFunApp f ns) = PartialFunApp f <$> mapM cloneNode ns
-clonePayload (PartialConApp c ns) = PartialConApp c <$> mapM cloneNode ns
+clonePayload (BuiltinFunApp f nodes) = BuiltinFunApp f <$> mapM cloneNode nodes
+clonePayload (SwitchApp arity branches actuals) = SwitchApp arity branches <$> mapM cloneNode actuals
+clonePayload (ConApp c nodes) = ConApp c <$> mapM cloneNode nodes
 clonePayload (ParamRef x) = return $ ParamRef x

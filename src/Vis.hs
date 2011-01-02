@@ -8,6 +8,8 @@ import Vis.Instantiate
 import Vis.Reduce
 
 import qualified Language.Haskell.Syntax as H
+import Language.Haskell.Pretty
+import Language.Haskell.Parser
 import Control.Applicative
 import Control.Monad.Error
 import Control.Monad.ST
@@ -39,80 +41,50 @@ showPayload depth (App e f) = do
   e' <- showNode (succ depth) e
   f' <- showNode (succ depth) f
   return $ unlines' ["App", e', f']
-showPayload depth (PartialFunApp f ns) = do
-  ns' <- mapM (showNode $ succ depth) ns
-  f' <- showFunction f
-  return $ unlines' (unwords ["PartialFunApp", f']:ns')
-showPayload depth (PartialConApp c ns) = do
+showPayload depth (BuiltinFunApp op args) = do
+  imgs <- mapM (showNode $ succ depth) args
+  return $ unlines' (unwords ["BuiltinFunApp", show op]:imgs)
+showPayload depth (SwitchApp arity matches args) = do  
+  patimgs <- forM matches $ \(Match pats node) -> do
+    img <- showNode (succ (succ depth)) node
+    return $ unlines [replicate (succ depth) ' ' ++ concatMap prettyPrint pats, img]    
+  imgs <- mapM (showNode $ succ depth) args
+  return $ unlines' (unwords ["SwitchApp", show arity]:(patimgs ++ imgs))
+showPayload depth (ConApp c ns) = do
   ns' <- mapM (showNode $ succ depth) ns
   return $ unlines' (unwords ["PartialConApp", show c]:ns')
     
-showFunction (BuiltinFun builtin) = return $ show builtin    
-showFunction (Matches f arity) = return $ concat [show f, '#':show arity]
-    
 unlines' = intercalate "\n"
     
--- printNode node = runST $ showNode 0 node
-
 test = do
-  sum <- fromExpr $ 
-          H.HsApp 
-            (H.HsApp 
-             (H.HsVar $ H.UnQual $ H.HsSymbol "+")
-             (H.HsLit (H.HsInt 35)))
-            (H.HsLit (H.HsInt 7))
+  let src = unlines $
+            ["length (x:xs) = 1 + length xs",
+             "length [] = 0",
+             "",
+             "length' xs = case xs of",
+             "  (x:xs) -> 1 + length' xs",
+             "  [] -> 0",
+             "",
+             "map f [] = []",
+             "map f (x:xs) = (f x):(map f xs)",
+             "",
+             "",
+             "ones = 1:ones",
+             "",
+             "take 0 _ = []",
+             "take _ [] = []",
+             "take n (x:xs) = x:take (n-1) xs",
+             "",
+             "main = take (length' [1,2,3,4,5]) ones"]  
+      ParseOk mod = parseModule src
+      H.HsModule _ _ _ _ decls = mod  
+  withVars (concatMap bindsFromDecl decls) $ do
+    forM_ decls $ \decl -> do
+      (x, node) <- fromDecl decl      
+      setVar x node
+    Just main <- lookupBind (Name $ H.HsIdent "main")
+    unlines <$> replicateM 25 (reduce main >> liftST (showNode 0 main) )
   
-  let f = H.UnQual $ H.HsIdent "f"
-      x = H.UnQual $ H.HsIdent "x"
-      xs = H.UnQual $ H.HsIdent "xs"
-      -- _map = H.UnQual $ H.HsIdent "map"
-      cons = H.Special $ H.HsCons
-      nil = H.Special $ H.HsListCon
-  -- node <- let ones = H.HsIdent "ones"
-  --             expr = H.HsApp
-  --                      (H.HsApp (H.HsCon cons) (H.HsVar x))
-  --                      (H.HsVar $ H.UnQual ones)
-  --         in fromExpr $
-  --           H.HsLet [H.HsPatBind undefined (H.HsPVar ones) (H.HsUnGuardedRhs expr) []] (H.HsVar $ H.UnQual ones)
-            
-  -- let formals1 = [H.HsPWildCard, H.HsPList []]
-  -- nodeMap1 <- fromExpr $ H.HsCon $ H.UnQual $ H.HsSymbol "[]"
-  
-  -- let formals2 = [H.HsPApp cons [H.HsPVar $ H.HsIdent "x", H.HsPVar $ H.HsIdent "xs"], H.HsPVar $ H.HsIdent "f"]
-  -- nodeMap2 <- fromExpr $
-  --               H.HsApp 
-  --                (H.HsApp (H.HsCon cons)
-  --                 (H.HsApp (H.HsVar f) (H.HsVar x)))
-  --                (H.HsApp
-  --                 (H.HsApp
-  --                  (H.HsVar _map)
-  --                  (H.HsVar f))
-  --                 (H.HsVar xs))
-                                  
-  let plus = H.UnQual $ H.HsSymbol "+"
-      
-  withFunctionForwards [(Name $ H.HsIdent "length", 1)] $ do
-    matches <- do
-      let lengthFormals1 = [H.HsPInfixApp (H.HsPVar $ H.HsIdent "x") cons (H.HsPVar $ H.HsIdent "xs")]
-      lengthNode1 <- fromExpr $ H.HsInfixApp 
-                      (H.HsLit (H.HsInt 1)) 
-                      (H.HsQVarOp plus) 
-                      (H.HsApp (H.HsVar $ H.UnQual $ H.HsIdent "length") (H.HsVar xs))
-  
-      let lengthFormals2 = [H.HsPList []]
-      lengthNode2 <- fromExpr $ H.HsLit (H.HsInt 0)
-      return [Match lengthFormals1 lengthNode1, Match lengthFormals2 lengthNode2]
-                
-    lst <- fromExpr $ 
-            H.HsApp 
-              (H.HsVar $ H.UnQual $ H.HsIdent "length")
-              (H.HsList $ map (H.HsLit . H.HsInt) [1..5])
-    img <- liftST $ showNode 0 lst
-    withFunctions (Map.fromList [(Name $ H.HsIdent "length", matches)]) $ do
-      replicateM_ 3 $ reduce lst
-    img' <- liftST $ showNode 0 lst  
-    return $ unlines [img, img']
-
 toList = foldr cons nil
   where cons x xs = H.HsApp (H.HsApp (H.HsCon $ H.Special $ H.HsCons) x) xs
         nil =  H.HsCon $ H.Special $ H.HsListCon
