@@ -17,6 +17,7 @@ import Data.Maybe
 import Language.Haskell.Pretty
 
 builtinFromName (Name (H.HsSymbol "+")) = Just IntPlus
+builtinFromName (Name (H.HsSymbol "-")) = Just IntMinus
 builtinFromName _ = Nothing
 
 bindsFromDecl :: H.HsDecl -> [Name]

@@ -31,7 +31,7 @@ reduceBuiltinBinaryInt op node left right = do
 
 reduceBuiltin :: BuiltinFun -> Node s -> [Node s] -> Vis s Bool
 reduceBuiltin IntPlus node [left, right] = reduceBuiltinBinaryInt (+) node left right
-reduceBuiltin IntMinus node [left, right] = reduceBuiltinBinaryInt (+) node left right
+reduceBuiltin IntMinus node [left, right] = reduceBuiltinBinaryInt (-) node left right
 reduceBuiltin _ _ _ = return False
                 
 reduceFully :: Node s -> Vis s ()    

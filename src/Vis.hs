@@ -86,7 +86,7 @@ test = do
              "main = let xy = steppers 3",
              "           inc = fst xy",
              "           dec = snd xy",
-             "       in inc 4",
+             "       in dec 4",
              ""
              ]  
       ParseOk mod = parseModule src
