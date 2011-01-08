@@ -98,8 +98,4 @@ test = do
     Just main <- lookupBind (Name $ H.HsIdent "main")
     unlines <$> replicateM 4 (reduce main >> liftST (showNode 0 main) )
   
-toList = foldr cons nil
-  where cons x xs = H.HsApp (H.HsApp (H.HsCon $ H.Special $ H.HsCons) x) xs
-        nil =  H.HsCon $ H.Special $ H.HsListCon
-
 main = putStrLn $ runST $ runVis test
