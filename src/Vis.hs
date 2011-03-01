@@ -1,4 +1,3 @@
-{-# LANGUAGE DeriveFunctor, GeneralizedNewtypeDeriving #-}
 module Main where
 
 import Vis.Node
@@ -8,54 +7,51 @@ import Vis.Instantiate
 import Vis.Reduce
 
 import qualified Language.Haskell.Syntax as H
-import Language.Haskell.Pretty
 import Language.Haskell.Parser
+import Language.Haskell.Pretty
 import Control.Applicative
-import Control.Monad.Error
+import Control.Monad
 import Control.Monad.ST
 import Data.STRef
-import Data.Map (Map)
-import qualified Data.Map as Map
-import Control.Monad.RWS
-import Control.Monad.State (StateT, evalStateT)
-import Data.Function (on)
-import Data.List
-import Data.Maybe
 
-type FunctionMap s = Map Name [Match s]
-            
-unsupported x = fail "Unsupported language feature"
-
-showNode :: Int -> Node s -> ST s String
-showNode depth (Node serial refPayload) | depth < 5 = do
+projectNode :: Int -> Node s -> ST s H.HsExp
+projectNode depth (Node serial refPayload) | depth < 5 = do
   payload <- readSTRef refPayload
-  payloadImage <- showPayload depth payload
-  return $ unwords [replicate depth ' ' ++ (show serial), payloadImage]
-showNode depth _ = return $ replicate depth ' ' ++ "..."
+  projectPayload depth payload
+projectNode _ _ =  return $ H.HsWildCard
 
-showPayload :: Int -> Payload s -> ST s String
-showPayload depth Uninitialized = return "<unfilled>"
-showPayload depth (ParamRef x) = return $ unwords ["ParamRef", show x]
-showPayload depth (IntLit n) = return $ unwords ["IntLit", show n]
-showPayload depth (App e f) = do
-  e' <- showNode (succ depth) e
-  f' <- showNode (succ depth) f
-  return $ unlines' ["App", e', f']
-showPayload depth (BuiltinFunApp op args) = do
-  imgs <- mapM (showNode $ succ depth) args
-  return $ unlines' (unwords ["BuiltinFunApp", show op]:imgs)
-showPayload depth (SwitchApp arity matches args) = do  
-  patimgs <- forM matches $ \(Match pats node) -> do
-    img <- showNode (succ (succ (succ depth))) node
-    return $ unlines' [replicate (succ (succ depth)) ' ' ++ unwords (map show pats) ++ " ->", img]    
-  imgs <- mapM (showNode $ succ depth) args
-  return $ unlines' (unwords ["SwitchApp", show arity]:(patimgs ++ imgs))
-showPayload depth (ConApp c ns) = do
-  ns' <- mapM (showNode $ succ depth) ns
-  return $ unlines' (unwords ["PartialConApp", show c]:ns')
-    
-unlines' = intercalate "\n"
-    
+toApp = foldl1 H.HsApp 
+
+projectName (Name n) = H.UnQual n
+projectName (Special s) = H.Special s
+
+noLoc = error "No location"
+
+projectPayload :: Int -> Payload s -> ST s H.HsExp
+projectPayload depth Uninitialized = return $ H.HsWildCard
+projectPayload depth (ParamRef x) = return $ H.HsVar $ projectName x
+projectPayload depth (IntLit n) = return $ H.HsLit $ H.HsInt n  
+projectPayload depth (App e f) = do
+  liftM2 H.HsApp (projectNode (succ depth) e) (projectNode (succ depth) f)
+projectPayload depth (BuiltinFunApp op args) = do  
+  projectArgs <- mapM (projectNode (succ depth)) args
+  let fun = case op of
+        IntPlus -> H.HsVar (H.UnQual $ H.HsSymbol "+")
+        IntMinus -> H.HsVar (H.UnQual $ H.HsSymbol "-")
+  return $ toApp $ fun:projectArgs
+projectPayload depth (ConApp c args) = do
+  projectArgs <- mapM (projectNode (succ depth)) args
+  let con = H.HsCon $ projectName c
+  return $ toApp $ con:projectArgs
+projectPayload depth (SwitchApp arity alts args) = do
+  projectAlts <- forM alts $ \ (Match pats node) -> do
+    body <- projectNode (succ depth) node
+    return $ H.HsAlt noLoc (H.HsPTuple pats) (H.HsUnGuardedAlt body) []
+  projectArgs <- mapM (projectNode (succ depth)) args  
+  let missing = replicate (arity - length args) H.HsWildCard
+      expr = H.HsTuple $ projectArgs ++ missing
+  return $ H.HsCase expr projectAlts
+
 test = do
   let src = unlines $
             ["length (x:xs) = 1 + length xs",
@@ -82,11 +78,11 @@ test = do
              "take _ [] = []",
              "take n (x:xs) = x:take (n-1) xs",
              "",
-             -- "main = take (length' [1,2,3,4,5]) ones",
-             "main = let xy = steppers 3",
-             "           inc = fst xy",
-             "           dec = snd xy",
-             "       in dec 4",
+             "main = take (length' [1,2,3,4,5]) ones",
+             -- "main = let xy = steppers 3",
+             -- "           inc = fst xy",
+             -- "           dec = snd xy",
+             -- "       in dec 4",
              ""
              ]  
       ParseOk mod = parseModule src
@@ -96,6 +92,6 @@ test = do
       (x, node) <- fromDecl decl      
       setVar x node
     Just main <- lookupBind (Name $ H.HsIdent "main")
-    unlines <$> replicateM 4 (reduce main >> liftST (showNode 0 main) )
+    unlines <$> replicateM 4 (reduce main >> (liftM prettyPrint $ liftST (projectNode 0 main)))
   
 main = putStrLn $ runST $ runVis test
