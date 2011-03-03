@@ -3,6 +3,7 @@ module Main where
 import Vis.Node
 import Vis.Monad
 import Vis.FromSource
+import Vis.Flatten
 import Vis.ToSource
 import Vis.Instantiate
 import Vis.Reduce
@@ -57,6 +58,6 @@ test = do
       setVar x node
     Just main <- lookupBind (Name $ H.HsIdent "main")
     -- unlines <$> replicateM 1 (reduce main >> (liftM prettyPrint $ liftST (toSource main)))
-    liftM prettyPrint $ liftST (toSource main)
+    liftM prettyPrint $ liftST (liftM toSource $ flatten main)
 
 main = putStrLn $ runST $ runVis test

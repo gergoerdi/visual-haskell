@@ -1,6 +1,4 @@
-{-# LANGUAGE NoMonomorphismRestriction #-}
-module Vis.ToSource where
--- module Vis.ToSource (toSource) where
+module Vis.ToSource (toSource) where
 
 import Vis.Node
 
@@ -17,85 +15,23 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Monoid
 
-newtype SeenNodes = SeenNodes { unSeenNodes :: Map Serial Bool }
+toSource :: FNode -> H.HsExp
+toSource = projectNode
 
--- instance Monoid SeenNodes where
---   mempty = SeenNodes mempty
---   mappend (SeenNodes old) (SeenNodes new) = SeenNodes $ merge old new
---     where merge = Map.unionWith (\ (name1, _) (name2, _) -> (Nothing, True))
-
-sharedNodes :: CNode s -> ST s [Serial]
-sharedNodes node = map fst <$> filter snd <$> Map.toAscList <$> 
-                     unSeenNodes <$> execStateT (collectNode node) (SeenNodes mempty)
-  where collectNode (CNode serial name refPayload) = do
-          lookup <- gets $ Map.lookup serial . unSeenNodes 
-          case lookup of
-            Nothing -> do
-              modify $ SeenNodes . Map.insert serial False . unSeenNodes
-              payload <- lift $ readSTRef refPayload
-              collectPayload payload
-            Just False -> do
-              modify $ SeenNodes . Map.insert serial True . unSeenNodes
-            Just True -> return ()
-        
-        collectPayload (App e f) = collectNode e >> collectNode f
-        collectPayload (BuiltinFunApp _ args) = mapM_ collectNode args
-        collectPayload (ConApp _ args) = mapM_ collectNode args
-        collectPayload (CaseApp arity alts args) = mapM_ collectAlt alts >> mapM_ collectNode args        
-        collectPayload _ = return ()
-        
-        collectAlt (Alt pats body) = collectNode body
-
-type Var = Name
-newtype VarMap = VarMap { unVarMap :: Map Serial (Maybe Var) }
-
-mkVarMap shareds = VarMap $ Map.fromAscList $ map (id &&& const Nothing) shareds
-
-type ToSource s a = RWST () [(Var, H.HsExp)] (Serial, VarMap) (ST s) a
-
-ensureVar :: CNode s -> ToSource s H.HsExp -> ToSource s H.HsExp
-ensureVar node@(CNode serial name _) f = do
-  lookup <- gets $ Map.lookup serial . unVarMap . snd         
-  case lookup of
-    Nothing -> f
-    Just Nothing -> do
-      let insert v = VarMap . Map.insert serial (Just v) . unVarMap          
-      var <- case name of
-        Nothing -> do
-          varNum <- gets fst
-          let var = Name $ H.HsIdent $ "v" ++ show (unSerial varNum)
-          modify $ (succ *** insert var)
-          return var
-        Just var -> do
-          modify $ (second $ insert var)
-          return var
-      proj <- f
-      tell [(var, proj)]
-      return $ toHsVar var
-    Just (Just var) -> return $ toHsVar var
-  where toHsVar n = H.HsVar $ projectName n
-
-scope f = do
-  (expr, binds) <- censor (const mempty) $ listen f  
-  return $ case binds of
-    [] -> expr
-    _ -> H.HsLet (map (uncurry toBind) binds) expr
-    
-  where toBind var val = H.HsPatBind noLoc (projectVar var) (H.HsUnGuardedRhs val) [] 
-        projectVar (Name n) = H.HsPVar $ n
-
-toSource :: CNode s -> ST s H.HsExp
-toSource node = do
-  shareds <- sharedNodes node  
-  (src, []) <- evalRWST (scope $ projectNode node) () (firstSerial, mkVarMap shareds)
-  return src
-
-projectNode :: CNode s -> ToSource s H.HsExp
-projectNode node@(CNode serial name refPayload) = ensureVar node $ do
-  payload <- lift $ readSTRef refPayload
-  projectPayload payload
+projectNode :: FNode -> H.HsExp
+projectNode (FNode payload) = projectPayload payload
+projectNode (FVarRef x) = H.HsVar $ projectFName x
+projectNode (FLet binds body) = H.HsLet (map toBind binds) $ projectNode body
+  where toBind (Bind var pats def) = H.HsPatBind noLoc 
+                                       (H.HsPVar $ projectVar var) 
+                                       (H.HsUnGuardedRhs $ projectNode def) []
+        projectVar (Given (Name n)) = n
+        projectVar (Generated v) = H.HsIdent v
 
 toApp = foldl1 H.HsApp 
+
+projectFName (Given n) = projectName n
+projectFName (Generated v) = H.UnQual $ H.HsIdent v
 
 projectName (Name n) = H.UnQual n
 projectName (Special s) = H.Special s
@@ -104,26 +40,18 @@ noLoc = error "No location"
 
 ensureLen l es = es ++ replicate (l - length es) H.HsWildCard
 
-projectPayload :: Payload (CNode s) -> ToSource s H.HsExp
-projectPayload Uninitialized = return $ H.HsWildCard
-projectPayload (ParamRef x) = return $ H.HsVar $ projectName x
-projectPayload (IntLit n) = return $ H.HsLit $ H.HsInt n  
-projectPayload (App e f) = do
-  liftM2 H.HsApp (projectNode e) (projectNode f)
-projectPayload (BuiltinFunApp op args) = do
-  projectArgs <- mapM projectNode args
-  let fun = case op of
-        IntPlus -> H.HsVar (H.UnQual $ H.HsSymbol "+#")
-        IntMinus -> H.HsVar (H.UnQual $ H.HsSymbol "-#")
-  return $ H.HsParen $ toApp $ fun:projectArgs
-projectPayload (ConApp c args) = do
-  projectArgs <- mapM projectNode args
-  let con = H.HsCon $ projectName c
-  return $ toApp $ con:projectArgs
-projectPayload (CaseApp arity alts args) = do
-  projectAlts <- forM alts $ \ (Alt pats node) -> do
-    body <- projectNode node
-    return $ H.HsAlt noLoc (H.HsPTuple pats) (H.HsUnGuardedAlt body) []
-  projectArgs <- mapM projectNode args  
-  let expr = H.HsTuple $ ensureLen arity projectArgs
-  return $ H.HsCase expr projectAlts
+projectPayload :: Payload FNode -> H.HsExp
+projectPayload Uninitialized = H.HsWildCard
+projectPayload (ParamRef x) = H.HsVar $ projectName x
+projectPayload (IntLit n) = H.HsLit $ H.HsInt n  
+projectPayload (App e f) = H.HsApp (projectNode e) (projectNode f)
+projectPayload (BuiltinFunApp op args) = H.HsParen $ toApp $ fun:(map projectNode args)
+  where fun = case op of
+          IntPlus -> H.HsVar (H.UnQual $ H.HsSymbol "+#")
+          IntMinus -> H.HsVar (H.UnQual $ H.HsSymbol "-#")
+projectPayload (ConApp c args) = toApp $ con:(map projectNode args)
+  where con = H.HsCon $ projectName c
+projectPayload (CaseApp arity alts args) = H.HsCase expr $ map projectAlt alts
+  where expr = H.HsTuple $ ensureLen arity $ map projectNode args
+        projectAlt (Alt pats node) = let body = projectNode node
+                                     in H.HsAlt noLoc (H.HsPTuple pats) (H.HsUnGuardedAlt body) []

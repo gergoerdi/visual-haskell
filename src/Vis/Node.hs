@@ -1,7 +1,9 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving, DeriveFunctor, DeriveFoldable, DeriveTraversable #-}
 module Vis.Node (
   Name(..), BuiltinFun(..), 
-  CNode(..), Alt(..), Payload(..),
+  CNode(..), FNode(..),
+  Bind(..), Alt(..), Payload(..),
+  FName(..),
   Serial(unSerial), firstSerial
   ) where
 
@@ -27,10 +29,25 @@ firstSerial = Serial 0
 data CNode s = CNode { cnodeSerial :: Serial, 
                        cnodeName :: Maybe Name,
                        cnodePayload :: STRef s (Payload (CNode s)) }
+               
+-- A node in the flattened representation               
+data FNode = FNode (Payload FNode)
+           | FLet [Bind] FNode
+           | FVarRef FName
+           deriving Show
+                    
+type Pat = HsPat
+                    
+data Bind = Bind FName [Pat] FNode
+          deriving Show
 
-data Alt node = Alt { altPatterns :: [HsPat],
+data FName = Generated String
+           | Given Name
+           deriving Show
+
+data Alt node = Alt { altPatterns :: [Pat],
                       altBody :: node }
-              deriving (Functor, Foldable, Traversable)
+              deriving (Show, Functor, Foldable, Traversable)
                
 data BuiltinFun = IntPlus
                 | IntMinus
@@ -43,7 +60,7 @@ data Payload node = Uninitialized
                   | BuiltinFunApp BuiltinFun [node]
                   | CaseApp Int [Alt node] [node]
                   | ConApp Name [node]
-                  deriving (Functor, Foldable, Traversable)
+                  deriving (Show, Functor, Foldable, Traversable)
 
 instance Eq (CNode s) where
   (==) = (==) `on` cnodeSerial
