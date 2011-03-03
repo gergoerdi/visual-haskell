@@ -96,7 +96,7 @@ noLoc = error "No location"
 
 ensureLen l es = es ++ replicate (l - length es) H.HsWildCard
 
-projectPayload :: Payload s -> ToSource s H.HsExp
+projectPayload :: Payload (Node s) -> ToSource s H.HsExp
 projectPayload Uninitialized = return $ H.HsWildCard
 projectPayload (ParamRef x) = return $ H.HsVar $ projectName x
 projectPayload (IntLit n) = return $ H.HsLit $ H.HsInt n  

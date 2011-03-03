@@ -28,10 +28,10 @@ runVis f = do (result, s', output) <- runRWST (unVis f) r s
 liftST :: ST s a -> Vis s a
 liftST = Vis . lift
 
-readPayload :: Node s -> Vis s (Payload s)
+readPayload :: Node s -> Vis s (Payload (Node s))
 readPayload = liftST . readSTRef . nodePayload
 
-writePayload :: Node s -> Payload s -> Vis s ()
+writePayload :: Node s -> Payload (Node s) -> Vis s ()
 writePayload node = liftST . writeSTRef (nodePayload node)
 
 unsupported x = fail $ unwords ["Unsupported language feature", x]
@@ -39,7 +39,7 @@ unsupported x = fail $ unwords ["Unsupported language feature", x]
 mkNode_ :: Vis s (Node s)
 mkNode_ = mkNode Uninitialized
 
-mkNode :: Payload s -> Vis s (Node s)
+mkNode :: Payload (Node s) -> Vis s (Node s)
 mkNode p = Node <$> nextSerial <*> liftST (newSTRef p)
 
 nextSerial :: Vis s Serial

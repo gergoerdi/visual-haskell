@@ -67,7 +67,7 @@ reduce node = do
           return True
     _ -> return False    
 
-applyCase :: [Alt s] -> [Node s] -> Vis s (Maybe (Node s))
+applyCase :: [Alt (Node s)] -> [Node s] -> Vis s (Maybe (Node s))
 applyCase alts args = do
   match <- firstMatch alts args
   case match of
@@ -75,7 +75,7 @@ applyCase alts args = do
     Just (formalMap, body) -> do
       Just <$> instantiate formalMap body
 
-firstMatch :: [Alt s] -> [Node s] -> Vis s (Maybe (FormalMap s, Node s))
+firstMatch :: [Alt (Node s)] -> [Node s] -> Vis s (Maybe (FormalMap s, Node s))
 firstMatch alts nodes = do
   getFirst <$> mconcat <$> 
     (forM alts $ \ (Alt pats body) -> do              

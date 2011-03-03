@@ -48,7 +48,7 @@ cloneNode node = do
               return node'
           
 
-clonePayload :: Payload s -> Cloner s (Payload s)
+clonePayload :: Payload (Node s) -> Cloner s (Payload (Node s))
 clonePayload Uninitialized = error "Consistency error: cloning an unfilled payload"
 clonePayload (IntLit n) = return $ IntLit n
 clonePayload (App e f) = App <$> cloneNode e <*> cloneNode f
