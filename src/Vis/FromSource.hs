@@ -41,44 +41,45 @@ bindsFromPat = execWriter . collect
         collect (H.HsPAsPat x pat) = tell [Name x] >> collect pat
         collect _ = return ()
 
-fromDecl :: H.HsDecl -> Vis s (Name, (Node s))
+fromDecl :: H.HsDecl -> Vis s (Name, (CNode s))
 fromDecl (H.HsPatBind _ (H.HsPVar x) (H.HsUnGuardedRhs expr) []) = do
-  node <- fromExpr expr
-  return (Name x, node)  
+  CNode serial name payload <- fromExpr expr
+  let node' = CNode serial (name `mplus` Just (Name x)) payload
+  return (Name x, node')  
 fromDecl (H.HsFunBind ms) = do
   let (f, arity) = bindFromMatches ms      
   alts <- forM ms $ \(H.HsMatch _ _ pats (H.HsUnGuardedRhs expr) []) ->
     (Alt pats <$> fromExpr expr)
-  node <- mkNode $ CaseApp arity alts []
+  node <- mkCNode (Just f) $ CaseApp arity alts []
   return (f, node)
 
-fromExpr :: H.HsExp -> Vis s (Node s)
+fromExpr :: H.HsExp -> Vis s (CNode s)
 fromExpr (H.HsParen expr) = fromExpr expr
-fromExpr (H.HsLit (H.HsInt n)) = mkNode (IntLit n)
-fromExpr (H.HsApp f x) = mkNode =<< (App <$> fromExpr f <*> fromExpr x)
+fromExpr (H.HsLit (H.HsInt n)) = mkCNode Nothing (IntLit n)
+fromExpr (H.HsApp f x) = mkCNode Nothing =<< (App <$> fromExpr f <*> fromExpr x)
 fromExpr (H.HsLambda _ pats expr) = do
   node <- fromExpr expr  
-  mkNode $ CaseApp (length pats) [Alt pats node] []
+  mkCNode Nothing $ CaseApp (length pats) [Alt pats node] []
 fromExpr (H.HsVar x) = do
   x' <- fromName x
   case builtinFromName x' of
-    Just builtin -> mkNode $ BuiltinFunApp builtin []
+    Just builtin -> mkCNode Nothing $ BuiltinFunApp builtin []
     Nothing -> do
       bind <- lookupBind x'
       case bind of
         Just node -> return node
-        Nothing -> mkNode $ ParamRef x'
+        Nothing -> mkCNode (Just x') $ ParamRef x'
 fromExpr (H.HsLet decls body) = do
   withDecls decls $ do
     forM_ decls $ \decl -> do
       (x, node) <- fromDecl decl      
       setVar x node
     fromExpr body            
-fromExpr (H.HsCon c) = mkNode =<< (ConApp <$> fromName c <*> return [])
+fromExpr (H.HsCon c) = mkCNode Nothing =<< (ConApp <$> fromName c <*> return [])
 fromExpr (H.HsList es) = fromExpr $ foldr cons nil es
   where cons x xs = H.HsApp (H.HsApp (H.HsCon $ H.Special $ H.HsCons) x) xs
         nil =  H.HsCon $ H.Special $ H.HsListCon
-fromExpr (H.HsTuple es) = mkNode =<< (ConApp (Special (H.HsTupleCon (length es))) <$> mapM fromExpr es)
+fromExpr (H.HsTuple es) = mkCNode Nothing =<< (ConApp (Special (H.HsTupleCon (length es))) <$> mapM fromExpr es)
 fromExpr (H.HsInfixApp left op right) = fromExpr $ H.HsApp (H.HsApp f left) right
   where f = case op of
           H.HsQVarOp var -> H.HsVar var
@@ -88,7 +89,7 @@ fromExpr (H.HsCase expr cases) = do
     H.HsAlt _ pat (H.HsUnGuardedAlt expr) [] -> Alt [pat] <$> fromExpr expr
     _ -> unsupported $ prettyPrint alt
   node <- fromExpr expr
-  mkNode $ CaseApp 1 alts [node]
+  mkCNode Nothing $ CaseApp 1 alts [node]
   
 fromExpr e = unsupported $ prettyPrint e
 

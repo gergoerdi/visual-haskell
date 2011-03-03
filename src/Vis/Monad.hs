@@ -15,7 +15,7 @@ import Data.Maybe
 
 type FunctionMap s = Map Name [Alt s]
             
-data R s = R { localVars :: Map Name (Node s) }
+data R s = R { localVars :: Map Name (CNode s) }
 
 newtype Vis s a = Vis { unVis :: RWST (R s) () Serial (ST s) a }
                 deriving (Functor, Applicative, Monad)
@@ -28,36 +28,36 @@ runVis f = do (result, s', output) <- runRWST (unVis f) r s
 liftST :: ST s a -> Vis s a
 liftST = Vis . lift
 
-readPayload :: Node s -> Vis s (Payload (Node s))
-readPayload = liftST . readSTRef . nodePayload
+readPayload :: CNode s -> Vis s (Payload (CNode s))
+readPayload = liftST . readSTRef . cnodePayload
 
-writePayload :: Node s -> Payload (Node s) -> Vis s ()
-writePayload node = liftST . writeSTRef (nodePayload node)
+writePayload :: CNode s -> Payload (CNode s) -> Vis s ()
+writePayload node = liftST . writeSTRef (cnodePayload node)
 
 unsupported x = fail $ unwords ["Unsupported language feature", x]
 
-mkNode_ :: Vis s (Node s)
-mkNode_ = mkNode Uninitialized
+mkCNode_ :: Maybe Name -> Vis s (CNode s)
+mkCNode_ name = mkCNode name Uninitialized
 
-mkNode :: Payload (Node s) -> Vis s (Node s)
-mkNode p = Node <$> nextSerial <*> liftST (newSTRef p)
+mkCNode :: Maybe Name -> Payload (CNode s) -> Vis s (CNode s)
+mkCNode name p = CNode <$> nextSerial <*> pure name <*> liftST (newSTRef p)
 
 nextSerial :: Vis s Serial
 nextSerial = Vis (get <* modify succ)
 
-lookupBind :: Name -> Vis s (Maybe (Node s))
+lookupBind :: Name -> Vis s (Maybe (CNode s))
 lookupBind x = Vis $ asks (Map.lookup x . localVars)
 
 withVars :: [Name] -> Vis s a -> Vis s a
 withVars vars f = do
   newBinds <- forM vars $ \var -> do
-    node <- mkNode_
+    node <- mkCNode_ (Just var)
     return (var, node)
   let addVars r =  r{ localVars = Map.union (localVars r) (Map.fromList newBinds) }
   Vis $ local addVars $ unVis f
 
-setVar :: Name -> Node s -> Vis s ()
+setVar :: Name -> CNode s -> Vis s ()
 setVar x node = do
-  payload <- liftST $ readSTRef $ nodePayload node
+  payload <- liftST $ readSTRef $ cnodePayload node
   node' <- fromJust <$> lookupBind x
   writePayload node' payload

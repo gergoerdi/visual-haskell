@@ -29,17 +29,17 @@ reduceBuiltinBinaryInt op node left right = do
   writePayload node $ IntLit $ n `op` m
   return True  
 
-reduceBuiltin :: BuiltinFun -> Node s -> [Node s] -> Vis s Bool
+reduceBuiltin :: BuiltinFun -> CNode s -> [CNode s] -> Vis s Bool
 reduceBuiltin IntPlus node [left, right] = reduceBuiltinBinaryInt (+) node left right
 reduceBuiltin IntMinus node [left, right] = reduceBuiltinBinaryInt (-) node left right
 reduceBuiltin _ _ _ = return False
                 
-reduceFully :: Node s -> Vis s ()    
+reduceFully :: CNode s -> Vis s ()    
 reduceFully node = do
   reduced <- reduce node
   when reduced $ reduceFully node
     
-reduce :: Node s -> Vis s Bool
+reduce :: CNode s -> Vis s Bool
 reduce node = do
   payload <- readPayload node
   case payload of
@@ -67,7 +67,7 @@ reduce node = do
           return True
     _ -> return False    
 
-applyCase :: [Alt (Node s)] -> [Node s] -> Vis s (Maybe (Node s))
+applyCase :: [Alt (CNode s)] -> [CNode s] -> Vis s (Maybe (CNode s))
 applyCase alts args = do
   match <- firstMatch alts args
   case match of
@@ -75,7 +75,7 @@ applyCase alts args = do
     Just (formalMap, body) -> do
       Just <$> instantiate formalMap body
 
-firstMatch :: [Alt (Node s)] -> [Node s] -> Vis s (Maybe (FormalMap s, Node s))
+firstMatch :: [Alt (CNode s)] -> [CNode s] -> Vis s (Maybe (FormalMap s, CNode s))
 firstMatch alts nodes = do
   getFirst <$> mconcat <$> 
     (forM alts $ \ (Alt pats body) -> do              
@@ -84,9 +84,9 @@ firstMatch alts nodes = do
           Nothing -> return $ First $ Nothing
           Just formalMap -> return $ First $ Just (formalMap, body))  
 
-match :: [H.HsPat] -> [Node s] -> Vis s (Maybe (FormalMap s))
+match :: [H.HsPat] -> [CNode s] -> Vis s (Maybe (FormalMap s))
 match pats ns = fmap (Map.fromList) <$> (runMaybeT $ execWriterT $ zipWithM_ collect pats ns)
-  where collect :: H.HsPat -> Node s -> WriterT [(Name, Node s)] (MaybeT (Vis s)) ()
+  where collect :: H.HsPat -> CNode s -> WriterT [(Name, CNode s)] (MaybeT (Vis s)) ()
         collect (H.HsPVar x) node = tell $ [(Name x, node)]
         collect H.HsPWildCard node = return ()
         collect (H.HsPParen pat) node = collect pat node

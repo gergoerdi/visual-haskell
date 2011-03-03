@@ -19,16 +19,15 @@ import Data.Monoid
 
 newtype SeenNodes = SeenNodes { unSeenNodes :: Map Serial Bool }
 
-seenNode = SeenNodes . flip Map.singleton False
+-- instance Monoid SeenNodes where
+--   mempty = SeenNodes mempty
+--   mappend (SeenNodes old) (SeenNodes new) = SeenNodes $ merge old new
+--     where merge = Map.unionWith (\ (name1, _) (name2, _) -> (Nothing, True))
 
-instance Monoid SeenNodes where
-  mempty = SeenNodes mempty
-  mappend (SeenNodes old) (SeenNodes new) = SeenNodes $ merge old new
-    where merge = Map.unionWith (\ _ _ -> True)
-
+sharedNodes :: CNode s -> ST s [Serial]
 sharedNodes node = map fst <$> filter snd <$> Map.toAscList <$> 
                      unSeenNodes <$> execStateT (collectNode node) (SeenNodes mempty)
-  where collectNode (Node serial refPayload) = do
+  where collectNode (CNode serial name refPayload) = do
           lookup <- gets $ Map.lookup serial . unSeenNodes 
           case lookup of
             Nothing -> do
@@ -47,26 +46,34 @@ sharedNodes node = map fst <$> filter snd <$> Map.toAscList <$>
         
         collectAlt (Alt pats body) = collectNode body
 
-type Var = Serial
+type Var = Name
 newtype VarMap = VarMap { unVarMap :: Map Serial (Maybe Var) }
 
 mkVarMap shareds = VarMap $ Map.fromAscList $ map (id &&& const Nothing) shareds
 
-type ToSource s a = RWST () [(Var, H.HsExp)] (Var, VarMap) (ST s) a
+type ToSource s a = RWST () [(Var, H.HsExp)] (Serial, VarMap) (ST s) a
 
-ensureVar :: Node s -> ToSource s H.HsExp -> ToSource s H.HsExp
-ensureVar node@(Node serial _) f = do
+ensureVar :: CNode s -> ToSource s H.HsExp -> ToSource s H.HsExp
+ensureVar node@(CNode serial name _) f = do
   lookup <- gets $ Map.lookup serial . unVarMap . snd         
   case lookup of
     Nothing -> f
     Just Nothing -> do
-      var <- gets fst
-      modify $ (succ *** VarMap . Map.insert serial (Just var) . unVarMap)
+      let insert v = VarMap . Map.insert serial (Just v) . unVarMap          
+      var <- case name of
+        Nothing -> do
+          varNum <- gets fst
+          let var = Name $ H.HsIdent $ "v" ++ show (unSerial varNum)
+          modify $ (succ *** insert var)
+          return var
+        Just var -> do
+          modify $ (second $ insert var)
+          return var
       proj <- f
       tell [(var, proj)]
-      return $ projectVar var
-    Just (Just var) -> return $ projectVar var      
-  where projectVar s = H.HsVar $ H.UnQual $ H.HsIdent $ "v" ++ show (unSerial s)
+      return $ toHsVar var
+    Just (Just var) -> return $ toHsVar var
+  where toHsVar n = H.HsVar $ projectName n
 
 scope f = do
   (expr, binds) <- censor (const mempty) $ listen f  
@@ -75,15 +82,16 @@ scope f = do
     _ -> H.HsLet (map (uncurry toBind) binds) expr
     
   where toBind var val = H.HsPatBind noLoc (projectVar var) (H.HsUnGuardedRhs val) [] 
-        projectVar s = H.HsPVar $ H.HsIdent $ "v" ++ show (unSerial s)
+        projectVar (Name n) = H.HsPVar $ n
 
+toSource :: CNode s -> ST s H.HsExp
 toSource node = do
   shareds <- sharedNodes node  
   (src, []) <- evalRWST (scope $ projectNode node) () (firstSerial, mkVarMap shareds)
   return src
 
-projectNode :: Node s -> ToSource s H.HsExp
-projectNode node@(Node serial refPayload) = ensureVar node $ do
+projectNode :: CNode s -> ToSource s H.HsExp
+projectNode node@(CNode serial name refPayload) = ensureVar node $ do
   payload <- lift $ readSTRef refPayload
   projectPayload payload
 
@@ -96,7 +104,7 @@ noLoc = error "No location"
 
 ensureLen l es = es ++ replicate (l - length es) H.HsWildCard
 
-projectPayload :: Payload (Node s) -> ToSource s H.HsExp
+projectPayload :: Payload (CNode s) -> ToSource s H.HsExp
 projectPayload Uninitialized = return $ H.HsWildCard
 projectPayload (ParamRef x) = return $ H.HsVar $ projectName x
 projectPayload (IntLit n) = return $ H.HsLit $ H.HsInt n  

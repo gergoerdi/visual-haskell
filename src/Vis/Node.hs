@@ -1,13 +1,15 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving, DeriveFunctor #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving, DeriveFunctor, DeriveFoldable, DeriveTraversable #-}
 module Vis.Node (
   Name(..), BuiltinFun(..), 
-  Node(..), Alt(..), Payload(..),
+  CNode(..), Alt(..), Payload(..),
   Serial(unSerial), firstSerial
   ) where
 
 import Language.Haskell.Syntax (HsName(..), HsSpecialCon, HsPat)
 import Data.STRef
 import Data.Function (on)
+import Data.Foldable
+import Data.Traversable
 import Language.Haskell.Pretty
 
 data Name = Name HsName
@@ -21,12 +23,14 @@ instance (Show Name) where
 newtype Serial = Serial { unSerial :: Int } deriving (Show, Eq, Ord, Enum)
 firstSerial = Serial 0
 
-data Node s = Node { nodeSerial :: Serial, 
-                     nodePayload :: STRef s (Payload (Node s)) }
+-- A node in the cyclic representation
+data CNode s = CNode { cnodeSerial :: Serial, 
+                       cnodeName :: Maybe Name,
+                       cnodePayload :: STRef s (Payload (CNode s)) }
 
 data Alt node = Alt { altPatterns :: [HsPat],
                       altBody :: node }
-              deriving Functor
+              deriving (Functor, Foldable, Traversable)
                
 data BuiltinFun = IntPlus
                 | IntMinus
@@ -39,11 +43,11 @@ data Payload node = Uninitialized
                   | BuiltinFunApp BuiltinFun [node]
                   | CaseApp Int [Alt node] [node]
                   | ConApp Name [node]
-                  deriving Functor
+                  deriving (Functor, Foldable, Traversable)
 
-instance Eq (Node s) where
-  (==) = (==) `on` nodeSerial
+instance Eq (CNode s) where
+  (==) = (==) `on` cnodeSerial
 
-instance Ord (Node s) where
-  compare = compare `on` nodeSerial
+instance Ord (CNode s) where
+  compare = compare `on` cnodeSerial
                      

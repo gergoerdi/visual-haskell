@@ -5,14 +5,13 @@ import Vis.Monad
 import Vis.FromSource
 
 import Control.Applicative
-import Control.Monad.Error
 import Data.STRef
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Control.Monad.RWS
 
-type NodeMap s = Map (Node s) (Node s)
-type FormalMap s = Map Name (Node s)
+type NodeMap s = Map (CNode s) (CNode s)
+type FormalMap s = Map Name (CNode s)
 
 type Cloner s a = RWST (FormalMap s) () (NodeMap s) (Vis s) a
 
@@ -21,10 +20,10 @@ withoutVars :: [Name] -> Cloner s a -> Cloner s a
 withoutVars vars = local removeVars
   where removeVars formals = foldl (flip Map.delete) formals vars
 
-instantiate :: FormalMap s -> Node s -> Vis s (Node s)
+instantiate :: FormalMap s -> CNode s -> Vis s (CNode s)
 instantiate actuals node = fst <$> (evalRWST (cloneNode node) actuals mempty)
 
-cloneNode :: Node s -> Cloner s (Node s)
+cloneNode :: CNode s -> Cloner s (CNode s)
 cloneNode node = do
   payload <- lift $ readPayload node
   case payload of
@@ -41,14 +40,14 @@ cloneNode node = do
             Just node' -> return node'
             Nothing -> do
               payload <- lift $ readPayload node
-              node' <- lift $ mkNode_
+              node' <- lift $ mkCNode_ Nothing
               modify (Map.insert node node')
               payload' <- clonePayload payload
               lift $ writePayload node' payload'
               return node'
           
 
-clonePayload :: Payload (Node s) -> Cloner s (Payload (Node s))
+clonePayload :: Payload (CNode s) -> Cloner s (Payload (CNode s))
 clonePayload Uninitialized = error "Consistency error: cloning an unfilled payload"
 clonePayload (IntLit n) = return $ IntLit n
 clonePayload (App e f) = App <$> cloneNode e <*> cloneNode f

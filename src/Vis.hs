@@ -51,11 +51,12 @@ test = do
              ]  
       ParseOk mod = parseModule src
       H.HsModule _ _ _ _ decls = mod  
-  withVars (concatMap bindsFromDecl decls) $ do
+  withDecls decls $ do
     forM_ decls $ \decl -> do
       (x, node) <- fromDecl decl      
       setVar x node
     Just main <- lookupBind (Name $ H.HsIdent "main")
-    unlines <$> replicateM 4 (reduce main >> (liftM prettyPrint $ liftST (toSource main)))
-  
+    -- unlines <$> replicateM 1 (reduce main >> (liftM prettyPrint $ liftST (toSource main)))
+    liftM prettyPrint $ liftST (toSource main)
+
 main = putStrLn $ runST $ runVis test
