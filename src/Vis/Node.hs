@@ -1,6 +1,11 @@
-module Vis.Node where
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+module Vis.Node (
+  Name(..), BuiltinFun(..), 
+  Node(..), Alt(..), Payload(..),
+  Serial(unSerial), firstSerial
+  ) where
 
-import Language.Haskell.Syntax (HsName, HsSpecialCon, HsPat)
+import Language.Haskell.Syntax (HsName(..), HsSpecialCon, HsPat)
 import Data.STRef
 import Data.Function (on)
 import Language.Haskell.Pretty
@@ -13,11 +18,14 @@ instance (Show Name) where
   show (Name name) = prettyPrint name
   show (Special special) = show special
 
-data Node s = Node { nodeSerial :: Int, 
+newtype Serial = Serial { unSerial :: Int } deriving (Show, Eq, Ord, Enum)
+firstSerial = Serial 0
+
+data Node s = Node { nodeSerial :: Serial, 
                      nodePayload :: STRef s (Payload s) }
 
-data Match s = Match { matchPatterns :: [HsPat],
-                       matchBody :: Node s }
+data Alt s = Alt { altPatterns :: [HsPat],
+                   altBody :: Node s }
                
 data BuiltinFun = IntPlus
                 | IntMinus
@@ -28,7 +36,7 @@ data Payload s = Uninitialized
                | IntLit Integer
                | App (Node s) (Node s)
                | BuiltinFunApp BuiltinFun [Node s]
-               | SwitchApp Int [Match s] [Node s]
+               | CaseApp Int [Alt s] [Node s]
                | ConApp Name [Node s]
 
 instance Eq (Node s) where

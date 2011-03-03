@@ -47,9 +47,9 @@ fromDecl (H.HsPatBind _ (H.HsPVar x) (H.HsUnGuardedRhs expr) []) = do
   return (Name x, node)  
 fromDecl (H.HsFunBind ms) = do
   let (f, arity) = bindFromMatches ms      
-  matches <- forM ms $ \(H.HsMatch _ _ pats (H.HsUnGuardedRhs expr) []) ->
-    (Match pats <$> fromExpr expr)
-  node <- mkNode $ SwitchApp arity matches []
+  alts <- forM ms $ \(H.HsMatch _ _ pats (H.HsUnGuardedRhs expr) []) ->
+    (Alt pats <$> fromExpr expr)
+  node <- mkNode $ CaseApp arity alts []
   return (f, node)
 
 fromExpr :: H.HsExp -> Vis s (Node s)
@@ -58,7 +58,7 @@ fromExpr (H.HsLit (H.HsInt n)) = mkNode (IntLit n)
 fromExpr (H.HsApp f x) = mkNode =<< (App <$> fromExpr f <*> fromExpr x)
 fromExpr (H.HsLambda _ pats expr) = do
   node <- fromExpr expr  
-  mkNode $ SwitchApp (length pats) [Match pats node] []
+  mkNode $ CaseApp (length pats) [Alt pats node] []
 fromExpr (H.HsVar x) = do
   x' <- fromName x
   case builtinFromName x' of
@@ -83,12 +83,12 @@ fromExpr (H.HsInfixApp left op right) = fromExpr $ H.HsApp (H.HsApp f left) righ
   where f = case op of
           H.HsQVarOp var -> H.HsVar var
           H.HsQConOp con -> H.HsCon con
-fromExpr (H.HsCase expr alts) = do          
-  matches <- forM alts $ \alt -> case alt of
-    H.HsAlt _ pat (H.HsUnGuardedAlt expr) [] -> Match [pat] <$> fromExpr expr
+fromExpr (H.HsCase expr cases) = do          
+  alts <- forM cases $ \alt -> case alt of
+    H.HsAlt _ pat (H.HsUnGuardedAlt expr) [] -> Alt [pat] <$> fromExpr expr
     _ -> unsupported $ prettyPrint alt
   node <- fromExpr expr
-  mkNode $ SwitchApp 1 matches [node]
+  mkNode $ CaseApp 1 alts [node]
   
 fromExpr e = unsupported $ prettyPrint e
 

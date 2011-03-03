@@ -53,9 +53,9 @@ clonePayload Uninitialized = error "Consistency error: cloning an unfilled paylo
 clonePayload (IntLit n) = return $ IntLit n
 clonePayload (App e f) = App <$> cloneNode e <*> cloneNode f
 clonePayload (BuiltinFunApp f nodes) = BuiltinFunApp f <$> mapM cloneNode nodes
-clonePayload (SwitchApp arity matches actuals) = SwitchApp arity <$> mapM cloneMatch matches <*> mapM cloneNode actuals
+clonePayload (CaseApp arity alts actuals) = CaseApp arity <$> mapM cloneAlt alts <*> mapM cloneNode actuals
 clonePayload (ConApp c nodes) = ConApp c <$> mapM cloneNode nodes
 clonePayload (ParamRef x) = return $ ParamRef x
 
-cloneMatch (Match pats body) = withoutVars (concatMap bindsFromPat pats) $ do 
-  Match pats <$> cloneNode body
+cloneAlt (Alt pats body) = withoutVars (concatMap bindsFromPat pats) $ do 
+  Alt pats <$> cloneNode body

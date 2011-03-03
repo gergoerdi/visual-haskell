@@ -13,17 +13,17 @@ import qualified Data.Map as Map
 import Control.Monad.RWS
 import Data.Maybe
 
-type FunctionMap s = Map Name [Match s]
+type FunctionMap s = Map Name [Alt s]
             
 data R s = R { localVars :: Map Name (Node s) }
 
-newtype Vis s a = Vis { unVis :: RWST (R s) () Int (ST s) a }
+newtype Vis s a = Vis { unVis :: RWST (R s) () Serial (ST s) a }
                 deriving (Functor, Applicative, Monad)
 
 runVis f = do (result, s', output) <- runRWST (unVis f) r s
               return result
   where r = R { localVars = mempty }
-        s = 0
+        s = firstSerial
 
 liftST :: ST s a -> Vis s a
 liftST = Vis . lift
@@ -42,7 +42,7 @@ mkNode_ = mkNode Uninitialized
 mkNode :: Payload s -> Vis s (Node s)
 mkNode p = Node <$> nextSerial <*> liftST (newSTRef p)
 
-nextSerial :: Vis s Int
+nextSerial :: Vis s Serial
 nextSerial = Vis (get <* modify succ)
 
 lookupBind :: Name -> Vis s (Maybe (Node s))

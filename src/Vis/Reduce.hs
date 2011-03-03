@@ -53,13 +53,13 @@ reduce node = do
           writePayload node $ ConApp con (snoc args arg)        
         BuiltinFunApp op args ->
           writePayload node $ BuiltinFunApp op (snoc args arg)
-        SwitchApp arity matches args ->
-          writePayload node $ SwitchApp arity matches (snoc args arg)          
+        CaseApp arity matches args ->
+          writePayload node $ CaseApp arity matches (snoc args arg)          
       return True
     ParamRef x -> fail $ unwords ["Unfilled parameter:", show x]
     BuiltinFunApp op args -> reduceBuiltin op node args
-    SwitchApp arity matches args | length args == arity -> do
-      node' <- applySwitch matches args
+    CaseApp arity alts args | length args == arity -> do
+      node' <- applyCase alts args
       case node' of
         Nothing -> return False
         Just node' -> do
@@ -67,20 +67,20 @@ reduce node = do
           return True
     _ -> return False    
 
-applySwitch :: [Match s] -> [Node s] -> Vis s (Maybe (Node s))
-applySwitch matches args = do
-  matchRes <- firstMatch matches args
-  case matchRes of
+applyCase :: [Alt s] -> [Node s] -> Vis s (Maybe (Node s))
+applyCase alts args = do
+  match <- firstMatch alts args
+  case match of
     Nothing -> return Nothing
     Just (formalMap, body) -> do
       Just <$> instantiate formalMap body
 
-firstMatch :: [Match s] -> [Node s] -> Vis s (Maybe (FormalMap s, Node s))
-firstMatch matches nodes = do
+firstMatch :: [Alt s] -> [Node s] -> Vis s (Maybe (FormalMap s, Node s))
+firstMatch alts nodes = do
   getFirst <$> mconcat <$> 
-    (forM matches $ \ (Match pats body) -> do              
-        matchResult <- match pats nodes
-        case matchResult of
+    (forM alts $ \ (Alt pats body) -> do              
+        match <- match pats nodes
+        case match of
           Nothing -> return $ First $ Nothing
           Just formalMap -> return $ First $ Just (formalMap, body))  
 
