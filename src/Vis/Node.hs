@@ -38,10 +38,10 @@ data FNode = FNode (Payload FNode)
                     
 type Pat = HsPat
                     
-data Bind = Bind FName [Pat] FNode
+data Bind = Bind FName FNode
           deriving Show
 
-data FName = Generated String
+data FName = Generated Serial
            | Given Name
            deriving Show
 

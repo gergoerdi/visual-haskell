@@ -53,8 +53,7 @@ ensureVar node@(CNode serial name _) f = do
       let insert v = VarMap . Map.insert serial (Just v) . unVarMap          
       var <- case name of
         Nothing -> do
-          varNum <- gets $ unSerial . fst
-          let var = Generated $ "v" ++ show varNum
+          var <- gets $ Generated . fst
           modify $ (succ *** insert var)
           return var
         Just varName -> do
@@ -70,8 +69,7 @@ scope f = do
   (expr, binds) <- censor (const mempty) $ listen f  
   return $ case binds of
     [] -> expr
-    _ -> FLet (map (uncurry toBind) binds) expr    
-  where toBind var val = Bind var [] val
+    _ -> FLet (map (uncurry Bind) binds) expr    
 
 flatten :: CNode s -> ST s FNode
 flatten node = do

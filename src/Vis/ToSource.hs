@@ -22,16 +22,20 @@ projectNode :: FNode -> H.HsExp
 projectNode (FNode payload) = projectPayload payload
 projectNode (FVarRef x) = H.HsVar $ projectFName x
 projectNode (FLet binds body) = H.HsLet (map toBind binds) $ projectNode body
-  where toBind (Bind var pats def) = H.HsPatBind noLoc 
-                                       (H.HsPVar $ projectVar var) 
-                                       (H.HsUnGuardedRhs $ projectNode def) []
-        projectVar (Given (Name n)) = n
-        projectVar (Generated v) = H.HsIdent v
+  where 
+    toBind (Bind var (FNode (CaseApp arity alts []))) = H.HsFunBind $ map toMatch alts
+      where toMatch (Alt pats body) = H.HsMatch noLoc name pats (H.HsUnGuardedRhs $ projectNode body) []
+            name = projectVar var
+    toBind (Bind var def) = H.HsPatBind noLoc 
+                            (H.HsPVar $ projectVar var) 
+                            (H.HsUnGuardedRhs $ projectNode def) []
+    projectVar (Given (Name n)) = n
+    projectVar (Generated s) = H.HsIdent $ "v" ++ show (unSerial s)
 
-toApp = foldl1 H.HsApp 
+toApp = foldl1 H.HsApp
 
 projectFName (Given n) = projectName n
-projectFName (Generated v) = H.UnQual $ H.HsIdent v
+projectFName (Generated s) = H.UnQual $ H.HsIdent $ "v" ++ show (unSerial s)
 
 projectName (Name n) = H.UnQual n
 projectName (Special s) = H.Special s
@@ -51,7 +55,8 @@ projectPayload (BuiltinFunApp op args) = H.HsParen $ toApp $ fun:(map projectNod
           IntMinus -> H.HsVar (H.UnQual $ H.HsSymbol "-#")
 projectPayload (ConApp c args) = toApp $ con:(map projectNode args)
   where con = H.HsCon $ projectName c
-projectPayload (CaseApp arity alts args) = H.HsCase expr $ map projectAlt alts
+projectPayload (CaseApp arity [Alt pats body] []) = H.HsParen $ H.HsLambda noLoc pats $ projectNode body
+projectPayload (CaseApp arity alts args) = toApp $ (H.HsCase expr $ map projectAlt alts):map projectNode args
   where expr = H.HsTuple $ ensureLen arity $ map projectNode args
         projectAlt (Alt pats node) = let body = projectNode node
                                      in H.HsAlt noLoc (H.HsPTuple pats) (H.HsUnGuardedAlt body) []
