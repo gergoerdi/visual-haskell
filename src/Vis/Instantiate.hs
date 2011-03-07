@@ -32,6 +32,8 @@ cloneNode node = do
       case actual of
         Just actual -> return actual
         Nothing -> cloneNode'
+    CaseApp _ _ _ -> do
+      return node
     _ -> cloneNode'
     
   where cloneNode' = do
@@ -39,9 +41,9 @@ cloneNode node = do
           case cloned of 
             Just node' -> return node'
             Nothing -> do
-              payload <- lift $ readPayload node
-              node' <- lift $ mkCNode_ Nothing
+              node' <- lift $ mkCNode_ $ cnodeName node
               modify (Map.insert node node')
+              payload <- lift $ readPayload node
               payload' <- clonePayload payload
               lift $ writePayload node' payload'
               return node'
@@ -51,10 +53,9 @@ clonePayload :: Payload (CNode s) -> Cloner s (Payload (CNode s))
 clonePayload Uninitialized = error "Consistency error: cloning an unfilled payload"
 clonePayload (IntLit n) = return $ IntLit n
 clonePayload (App e f) = App <$> cloneNode e <*> cloneNode f
-clonePayload (BuiltinFunApp f nodes) = BuiltinFunApp f <$> mapM cloneNode nodes
-clonePayload (CaseApp arity alts actuals) = CaseApp arity <$> mapM cloneAlt alts <*> mapM cloneNode actuals
-clonePayload (ConApp c nodes) = ConApp c <$> mapM cloneNode nodes
+clonePayload (BuiltinFunApp f args) = BuiltinFunApp f <$> mapM cloneNode args
+clonePayload (CaseApp arity alts args) = error "Cloning a CaseApp"
+clonePayload (ConApp c args) = ConApp c <$> mapM cloneNode args
 clonePayload (ParamRef x) = return $ ParamRef x
 
-cloneAlt (Alt pats body) = withoutVars (concatMap bindsFromPat pats) $ do 
-  Alt pats <$> cloneNode body
+cloneAlt (Alt pats body) = Alt pats <$> (withoutVars (concatMap bindsFromPat pats) $ cloneNode body)

@@ -36,25 +36,21 @@ reduceBuiltin _ _ _ = return False
                 
 reduceFully :: CNode s -> Vis s ()    
 reduceFully node = do
-  reduced <- reduce node
-  when reduced $ reduceFully node
+  changed <- reduce node
+  when changed $ reduceFully node
     
 reduce :: CNode s -> Vis s Bool
 reduce node = do
   payload <- readPayload node
   case payload of
-    -- ConApp _ _ -> return False
-    -- IntLit _ -> return False
     App f arg -> do
-      reduceFully f
+      reduceFully f            
       payloadFun <- readPayload f
-      case payloadFun of
-        ConApp con args ->
-          writePayload node $ ConApp con (snoc args arg)        
-        BuiltinFunApp op args ->
-          writePayload node $ BuiltinFunApp op (snoc args arg)
-        CaseApp arity matches args ->
-          writePayload node $ CaseApp arity matches (snoc args arg)          
+      let payload' = case payloadFun of
+            ConApp con args -> ConApp con (snoc args arg)        
+            BuiltinFunApp op args -> BuiltinFunApp op (snoc args arg)
+            CaseApp arity alts args -> CaseApp arity alts (snoc args arg)
+      writePayload node payload'
       return True
     ParamRef x -> fail $ unwords ["Unfilled parameter:", show x]
     BuiltinFunApp op args -> reduceBuiltin op node args
@@ -72,8 +68,7 @@ applyCase alts args = do
   match <- firstMatch alts args
   case match of
     Nothing -> return Nothing
-    Just (formalMap, body) -> do
-      Just <$> instantiate formalMap body
+    Just (formalMap, body) -> Just <$> instantiate formalMap body
 
 firstMatch :: [Alt (CNode s)] -> [CNode s] -> Vis s (Maybe (FormalMap s, CNode s))
 firstMatch alts nodes = do
@@ -91,10 +86,9 @@ match pats ns = fmap (Map.fromList) <$> (runMaybeT $ execWriterT $ zipWithM_ col
         collect H.HsPWildCard node = return ()
         collect (H.HsPParen pat) node = collect pat node
         collect (H.HsPLit (H.HsInt n)) node = do 
-          (lift . lift) $ reduce node
+          (lift . lift) $ reduceFully node
           IntLit n' <- (lift . lift) $ readPayload node
           guard $ n' == n
-          return ()
         collect (H.HsPApp con pats) node = do          
           con' <- fromName con
           (lift . lift) $ reduce node

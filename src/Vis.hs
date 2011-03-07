@@ -44,6 +44,7 @@ test = do
              "take n (x:xs) = x:take (n-1) xs",
              "",
              "main = take (length [1,2,3,4,5]) ones",
+             -- "main = length [1,2,3]",
              -- "main = let xy = steppers 3",
              -- "           inc = fst xy",
              -- "           dec = snd xy",
@@ -63,6 +64,6 @@ test = do
       result <- liftM prettyPrint $ liftST (liftM toSource $ flatten main)
       reduce main
       return result)
-  where steps = 1
-
+  where steps = 4
+        
 main = putStrLn $ runST $ runVis test
