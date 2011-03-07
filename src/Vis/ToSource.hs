@@ -88,13 +88,12 @@ projectPayload (BuiltinFunApp op args) = toApp $ fun:(map projectNode args)
 projectPayload (ConApp c args) = toApp $ con:(map projectNode args)
   where con = H.HsCon $ projectName c
 projectPayload (CaseApp arity [Alt pats body] []) = H.HsParen $ H.HsLambda noLoc pats $ projectNode body
-projectPayload (CaseApp 1 alts args) = toApp $ (H.HsCase expr $ map projectAlt alts):map projectNode args
+projectPayload (CaseApp 1 alts args) = H.HsCase expr $ map projectAlt alts
   where expr = case args of 
           [] -> H.HsWildCard
           [arg] -> projectNode arg        
         projectAlt (Alt [pat] node) = H.HsAlt noLoc pat (H.HsUnGuardedAlt $ projectNode node) []
-projectPayload (CaseApp arity alts args) = toApp $ (H.HsCase expr $ map projectAlt alts):map projectNode args
-
+projectPayload (CaseApp arity alts args) = H.HsCase expr $ map projectAlt alts
   where expr = H.HsTuple $ ensureLen arity $ map projectNode args
         projectAlt (Alt pats node) = let body = projectNode node
                                      in H.HsAlt noLoc (H.HsPTuple pats) (H.HsUnGuardedAlt body) []
