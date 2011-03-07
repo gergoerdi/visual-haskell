@@ -42,23 +42,23 @@ newtype VarMap = VarMap { unVarMap :: Map Serial (Maybe FName) }
 
 mkVarMap shareds = VarMap $ Map.fromAscList $ map (id &&& const Nothing) shareds
 
-type ToSource s a = RWST () [(FName, FNode)] (Serial, VarMap) (ST s) a
+type ToSource s a = RWST () [(FName, FNode)] VarMap (ST s) a
 
 ensureVar :: CNode s -> ToSource s FNode -> ToSource s FNode
 ensureVar node@(CNode serial name _) f = do
-  lookup <- gets $ Map.lookup serial . unVarMap . snd
+  lookup <- gets $ Map.lookup serial . unVarMap
   case lookup of
     Nothing -> f
     Just Nothing -> do
       let insert v = VarMap . Map.insert serial (Just v) . unVarMap          
       var <- case name of
         Nothing -> do
-          var <- gets $ Generated . fst
-          modify $ (succ *** insert var)
+          let var = Generated serial
+          modify $ insert var
           return var
         Just varName -> do
           let var = Given varName
-          modify $ (second $ insert var)
+          modify $ insert var
           return var
       proj <- f
       tell [(var, proj)]
@@ -74,7 +74,7 @@ scope f = do
 flatten :: CNode s -> ST s FNode
 flatten node = do
   shareds <- sharedNodes node 
-  (src, []) <- evalRWST (scope $ flattenNode node) () (firstSerial, mkVarMap shareds)
+  (src, []) <- evalRWST (scope $ flattenNode node) () (mkVarMap shareds)
   return src
 
 flattenNode :: CNode s -> ToSource s FNode
