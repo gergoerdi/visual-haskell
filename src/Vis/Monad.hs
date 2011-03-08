@@ -1,4 +1,4 @@
-{-# LANGUAGE DeriveFunctor, GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE DeriveFunctor, GeneralizedNewtypeDeriving, MultiParamTypeClasses, FunctionalDependencies, FlexibleInstances #-}
 module Vis.Monad where
 
 import Vis.Node
@@ -8,22 +8,13 @@ import Control.Applicative
 import Control.Monad.Error
 import Control.Monad.ST
 import Data.STRef
-import Data.Map (Map)
-import qualified Data.Map as Map
-import Control.Monad.RWS
+import Control.Monad.State
 import Data.Maybe
 
-type FunctionMap s = Map Name [Alt s]
-            
-data R s = R { localVars :: Map Name (CNode s) }
-
-newtype Vis s a = Vis { unVis :: RWST (R s) () Serial (ST s) a }
+newtype Vis s a = Vis { unVis :: StateT Serial (ST s) a }
                 deriving (Functor, Applicative, Monad)
 
-runVis f = do (result, s', output) <- runRWST (unVis f) r s
-              return result
-  where r = R { localVars = mempty }
-        s = firstSerial
+runVis f = evalStateT (unVis f) firstSerial
 
 liftST :: ST s a -> Vis s a
 liftST = Vis . lift
@@ -36,28 +27,13 @@ writePayload node = liftST . writeSTRef (cnodePayload node)
 
 unsupported x = fail $ unwords ["Unsupported language feature", x]
 
-mkCNode_ :: Maybe Name -> Vis s (CNode s)
-mkCNode_ name = mkCNode name Uninitialized
+class MonadCNode m s | m -> s where
+  mkCNode :: Maybe Name -> Payload (CNode s) -> m (CNode s)
+  mkCNode_ :: Maybe Name -> m (CNode s)
+  mkCNode_ name = mkCNode name Uninitialized
 
-mkCNode :: Maybe Name -> Payload (CNode s) -> Vis s (CNode s)
-mkCNode name p = CNode <$> nextSerial <*> pure name <*> liftST (newSTRef p)
+instance MonadCNode (Vis s) s where
+  mkCNode name p = CNode <$> nextSerial <*> pure name <*> liftST (newSTRef p)
 
 nextSerial :: Vis s Serial
 nextSerial = Vis (get <* modify succ)
-
-lookupBind :: Name -> Vis s (Maybe (CNode s))
-lookupBind x = Vis $ asks (Map.lookup x . localVars)
-
-withVars :: [Name] -> Vis s a -> Vis s a
-withVars vars f = do
-  newBinds <- forM vars $ \var -> do
-    node <- mkCNode_ (Just var)
-    return (var, node)
-  let addVars r =  r{ localVars = Map.union (localVars r) (Map.fromList newBinds) }
-  Vis $ local addVars $ unVis f
-
-setVar :: Name -> CNode s -> Vis s ()
-setVar x node = do
-  payload <- liftST $ readSTRef $ cnodePayload node
-  node' <- fromJust <$> lookupBind x
-  writePayload node' payload

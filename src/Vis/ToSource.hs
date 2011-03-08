@@ -19,19 +19,22 @@ import Data.Monoid
 toSource :: FNode -> H.HsExp
 toSource = parenExpr . projectNode
 
+paren :: H.HsExp -> H.HsExp                 
+paren e@(H.HsParen _) = e
+paren e = H.HsParen e
+                 
 parenExpr (H.HsApp (H.HsApp op left) right) | Just opName <- getInfix = H.HsInfixApp left' opName right'
   where getInfix = case op of
           H.HsCon c@(H.Special H.HsCons) -> Just $ H.HsQConOp c
           H.HsVar sym@(H.UnQual (H.HsSymbol _)) -> Just $ H.HsQVarOp sym
           _ -> Nothing
         
-        forceTopParen e@(H.HsApp _ _) = H.HsParen e
+        forceTopParen e@(H.HsApp _ _) = paren e
         forceTopParen e = e
         
         left' = forceTopParen $ parenExpr left
-        right' = forceTopParen $ parenExpr right
-          
-parenExpr (H.HsApp e f@(H.HsApp _ _)) = H.HsApp (parenExpr e) (H.HsParen (parenExpr f))
+        right' = forceTopParen $ parenExpr right          
+parenExpr (H.HsApp e f@(H.HsApp _ _)) = H.HsApp (parenExpr e) (paren (parenExpr f))
 parenExpr (H.HsApp e f) = H.HsApp (parenExpr e) (parenExpr f)
 parenExpr (H.HsLambda loc pats body) = H.HsLambda loc pats $ parenExpr body
 parenExpr (H.HsLet decls body) = H.HsLet (map parenDecl decls) $ parenExpr body
@@ -87,7 +90,7 @@ projectPayload (BuiltinFunApp op args) = toApp $ fun:(map projectNode args)
           IntMinus -> H.HsVar (H.UnQual $ H.HsSymbol "-#")
 projectPayload (ConApp c args) = toApp $ con:(map projectNode args)
   where con = H.HsCon $ projectName c
-projectPayload (CaseApp arity [Alt pats body] []) = H.HsParen $ H.HsLambda noLoc pats $ projectNode body
+projectPayload (CaseApp arity [Alt pats body] []) = paren $ H.HsLambda noLoc pats $ projectNode body
 projectPayload (CaseApp 1 alts args) = H.HsCase expr $ map projectAlt alts
   where expr = case args of 
           [] -> H.HsWildCard

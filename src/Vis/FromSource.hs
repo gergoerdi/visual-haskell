@@ -1,4 +1,4 @@
-{-# LANGUAGE DeriveFunctor, GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE DeriveFunctor, GeneralizedNewtypeDeriving, MultiParamTypeClasses, FlexibleInstances #-}
 module Vis.FromSource where
 -- module Vis.FromSource (fromName, fromExpr) where
 
@@ -12,9 +12,39 @@ import Control.Monad.ST
 import Data.STRef
 import Control.Monad.State (StateT, evalStateT)
 import Control.Monad.Writer (tell, execWriter)
+import Control.Monad.Reader
 import Data.Function (on)
 import Data.Maybe
 import Language.Haskell.Pretty
+
+import Data.Map (Map)
+import qualified Data.Map as Map
+
+newtype FromSource s a = FromSource { unFromSource :: ReaderT (Map Name (CNode s)) (Vis s) a }
+                       deriving (Functor, Applicative, Monad)
+
+runFromSource f = runReaderT (unFromSource f) Map.empty
+
+instance MonadCNode (FromSource s) s where
+  mkCNode name = FromSource . lift . mkCNode name
+
+
+lookupBind :: Name -> FromSource s (Maybe (CNode s))
+lookupBind x = FromSource $ asks (Map.lookup x)
+
+withVars :: [Name] -> FromSource s a -> FromSource s a
+withVars vars f = do
+  newBinds <- forM vars $ \var -> do
+    node <- mkCNode_ (Just var)
+    return (var, node)
+  FromSource $ local (flip Map.union $ Map.fromList newBinds) $ unFromSource f
+
+setVar :: Name -> CNode s -> FromSource s ()
+setVar x node = do
+  payload <- FromSource $ lift $ liftST $ readSTRef $ cnodePayload node
+  node' <- fromJust <$> lookupBind x
+  FromSource $ lift $ writePayload node' payload
+
 
 builtinFromName (Name (H.HsSymbol "+")) = Just IntPlus
 builtinFromName (Name (H.HsSymbol "-")) = Just IntMinus
@@ -24,7 +54,7 @@ bindsFromDecl :: H.HsDecl -> [Name]
 bindsFromDecl (H.HsPatBind _ pat _ _) = bindsFromPat pat
 bindsFromDecl (H.HsFunBind ms) = [fst $ bindFromMatches ms]
 
-withDecls :: [H.HsDecl] -> Vis s a -> Vis s a
+withDecls :: [H.HsDecl] -> FromSource s a -> FromSource s a
 withDecls decls = withVars $ concatMap bindsFromDecl decls
 
 bindFromMatches :: [H.HsMatch] -> (Name, Int)
@@ -41,7 +71,7 @@ bindsFromPat = execWriter . collect
         collect (H.HsPAsPat x pat) = tell [Name x] >> collect pat
         collect _ = return ()
 
-fromDecl :: H.HsDecl -> Vis s (Name, (CNode s))
+fromDecl :: H.HsDecl -> FromSource s (Name, (CNode s))
 fromDecl (H.HsPatBind _ (H.HsPVar x) (H.HsUnGuardedRhs expr) []) = do
   CNode serial name payload <- fromExpr expr
   let node' = CNode serial (name `mplus` Just (Name x)) payload
@@ -53,7 +83,7 @@ fromDecl (H.HsFunBind ms) = do
   node <- mkCNode (Just f) $ CaseApp arity alts []
   return (f, node)
 
-fromExpr :: H.HsExp -> Vis s (CNode s)
+fromExpr :: H.HsExp -> FromSource s (CNode s)
 fromExpr (H.HsParen expr) = fromExpr expr
 fromExpr (H.HsLit (H.HsInt n)) = mkCNode Nothing (IntLit n)
 fromExpr (H.HsApp f x) = mkCNode Nothing =<< (App <$> fromExpr f <*> fromExpr x)
