@@ -55,11 +55,12 @@ data BuiltinFun = IntPlus
                
 data Payload node = Uninitialized
                   | Knot node
+                  | Lambda Pat node
                   | ParamRef Name
                   | IntLit Integer
                   | App node node
                   | BuiltinFunApp BuiltinFun [node]
-                  | CaseApp Int [Alt node] [node]
+                  | Case [Alt node] [node]
                   | ConApp Name [node]
                   deriving (Show, Functor, Foldable, Traversable)
 

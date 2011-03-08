@@ -51,28 +51,29 @@ reduceStep node = do
   case payload of    
     Knot node -> do
       node' <- clone node
-      overwriteWith node'
+      reduceStep node'
+      overwriteWith node'      
+      return True
     App f arg -> do
       reduceWHNF f            
       payloadFun <- readPayload f
-      let payload' = case payloadFun of
-            ConApp con args -> ConApp con (snoc args arg)        
-            BuiltinFunApp op args -> BuiltinFunApp op (snoc args arg)
-            CaseApp arity alts args -> CaseApp arity alts (snoc args arg)
-      writePayload node payload'
+      case payloadFun of
+        ConApp con args -> writePayload node $ ConApp con (snoc args arg)
+        BuiltinFunApp op args -> writePayload node $ BuiltinFunApp op (snoc args arg)
+        Lambda pat body -> do
+          Just formalMap <- match [pat] [arg]
+          overwriteWith =<< instantiate formalMap body
       return True
     ParamRef x -> fail $ unwords ["Unfilled parameter:", show x]
     BuiltinFunApp op args -> reduceBuiltin op node args
-    CaseApp arity alts args | length args == arity -> do
+    Case alts args -> do
       node' <- applyCase alts args
       case node' of
         Nothing -> return False
-        Just node' -> overwriteWith node'          
+        Just node' -> overwriteWith node' >> return True
     _ -> return False    
     
-  where overwriteWith node' = do
-          writePayload node =<< readPayload node'
-          return True
+  where overwriteWith node' = writePayload node =<< readPayload node'
 
 applyCase :: [Alt (CNode s)] -> [CNode s] -> Vis s (Maybe (CNode s))
 applyCase alts args = do

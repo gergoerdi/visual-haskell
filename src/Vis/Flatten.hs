@@ -20,7 +20,7 @@ sharedNodes :: CNode s -> ST s [Serial]
 sharedNodes node = map fst <$> filter snd <$> Map.toAscList <$> 
                      unSeenNodes <$> execStateT (collectNode node) (SeenNodes mempty)
   where collectNode = collectNode' False
-        
+                      
         collectNode' force (CNode serial name refPayload) = do
           lookup <- gets $ Map.lookup serial . unSeenNodes 
           case lookup of
@@ -33,10 +33,11 @@ sharedNodes node = map fst <$> filter snd <$> Map.toAscList <$>
             Just True -> return ()
         
         collectPayload (Knot node) = collectNode' True node
+        collectPayload (Lambda pat node) = collectNode node
         collectPayload (App e f) = collectNode e >> collectNode f
         collectPayload (BuiltinFunApp _ args) = mapM_ collectNode args
         collectPayload (ConApp _ args) = mapM_ collectNode args
-        collectPayload (CaseApp arity alts args) = mapM_ collectAlt alts >> mapM_ collectNode args        
+        collectPayload (Case alts args) = mapM_ collectAlt alts >> mapM_ collectNode args        
         collectPayload _ = return ()
         
         collectAlt (Alt pats body) = collectNode body
@@ -87,10 +88,11 @@ flattenNode node@(CNode serial name refPayload) = ensureVar node $ do
 
 flattenPayload :: Payload (CNode s) -> ToSource s (Payload FNode)
 flattenPayload (Knot node) = Knot <$> flattenNode node
+flattenPayload (Lambda pat node) = Lambda pat <$> flattenNode node
 flattenPayload (App e f) = liftM2 App (flattenNode e) (flattenNode f)
 flattenPayload (BuiltinFunApp op args) = liftM (BuiltinFunApp op) $ mapM flattenNode args
 flattenPayload (ConApp c args) = liftM (ConApp c) $ mapM flattenNode args
-flattenPayload (CaseApp arity alts args) = liftM2 (CaseApp arity) (mapM flattenAlt alts) (mapM flattenNode args)
+flattenPayload (Case alts args) = liftM2 Case (mapM flattenAlt alts) (mapM flattenNode args)
   where flattenAlt (Alt pats node) = liftM (Alt pats) $ flattenNode node
 flattenPayload (Uninitialized) = return $ Uninitialized
 flattenPayload (ParamRef x) = return $ ParamRef x

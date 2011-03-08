@@ -10,9 +10,9 @@ import Control.Applicative
 import Control.Monad.Error
 import Control.Monad.ST
 import Data.STRef
-import Control.Monad.State (StateT, evalStateT)
 import Control.Monad.Writer (tell, execWriter)
 import Control.Monad.Reader
+import Control.Monad.RWS
 import Data.Function (on)
 import Data.Maybe
 import Language.Haskell.Pretty
@@ -20,10 +20,11 @@ import Language.Haskell.Pretty
 import Data.Map (Map)
 import qualified Data.Map as Map
 
-newtype FromSource s a = FromSource { unFromSource :: ReaderT (Map Name (CNode s)) (Vis s) a }
-                       deriving (Functor, Applicative, Monad)
+newtype FromSource s a = FromSource { unFromSource :: RWST (Map Name (CNode s)) () Serial (Vis s) a }
+                       deriving (Functor, Applicative, Monad, MonadState Serial)
 
-runFromSource f = runReaderT (unFromSource f) Map.empty
+runFromSource :: FromSource s a -> Vis s a
+runFromSource f = fst <$> evalRWST (unFromSource f) Map.empty firstSerial
 
 instance MonadCNode (FromSource s) s where
   liftCNode = FromSource . lift
@@ -79,17 +80,26 @@ fromDecl (H.HsPatBind _ (H.HsPVar x) (H.HsUnGuardedRhs expr) []) = do
 fromDecl (H.HsFunBind ms) = do
   let (f, arity) = bindFromMatches ms      
   alts <- forM ms $ \(H.HsMatch _ _ pats (H.HsUnGuardedRhs expr) []) ->
-    (Alt pats <$> fromExpr expr)
-  node <- mkCNode (Just f) $ CaseApp arity alts []
-  return (f, node)
+    (Alt pats <$> fromExpr expr)  
+  vars <- forM [1..arity] $ \_-> do
+    s <- gets unSerial
+    modify succ
+    return $ H.HsIdent $ "%v" ++ show s
+  varRefs <- forM vars $ \var -> 
+    mkCNode Nothing $ ParamRef $ Name var
+  node <- mkCNode Nothing $ Case alts varRefs
+  node' <- foldM `flip` node `flip` vars $ \node var -> 
+    mkCNode (Just f) $ Lambda (H.HsPVar var) node  
+  return (f, node')
 
 fromExpr :: H.HsExp -> FromSource s (CNode s)
 fromExpr (H.HsParen expr) = fromExpr expr
 fromExpr (H.HsLit (H.HsInt n)) = mkCNode Nothing (IntLit n)
 fromExpr (H.HsApp f x) = mkCNode Nothing =<< (App <$> fromExpr f <*> fromExpr x)
 fromExpr (H.HsLambda _ pats expr) = do
-  node <- fromExpr expr  
-  mkCNode Nothing $ CaseApp (length pats) [Alt pats node] []
+  node <- fromExpr expr 
+  foldM `flip` node `flip` pats $ \node pat -> 
+    mkCNode Nothing $ Lambda pat node
 fromExpr (H.HsVar x) = do
   x' <- fromName x
   case builtinFromName x' of
@@ -97,7 +107,7 @@ fromExpr (H.HsVar x) = do
     Nothing -> do
       bind <- lookupBind x'
       case bind of
-        Just node -> mkCNode Nothing (Knot node)
+        Just node -> mkCNode Nothing $ Knot node
         Nothing -> mkCNode (Just x') $ ParamRef x'
 fromExpr (H.HsLet decls body) = do
   withDecls decls $ do
@@ -119,7 +129,7 @@ fromExpr (H.HsCase expr cases) = do
     H.HsAlt _ pat (H.HsUnGuardedAlt expr) [] -> Alt [pat] <$> fromExpr expr
     _ -> unsupported $ prettyPrint alt
   node <- fromExpr expr
-  mkCNode Nothing $ CaseApp 1 alts [node]
+  mkCNode Nothing $ Case alts [node]
   
 fromExpr e = unsupported $ prettyPrint e
 

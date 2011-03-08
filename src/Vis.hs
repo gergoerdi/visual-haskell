@@ -43,13 +43,20 @@ test = do
              "take _ [] = []",
              "take n (x:xs) = x:take (n-1) xs",
              "",
-             -- "main = take (length [1,2,3,4,5]) ones",
+             "drop 0 xs = xs",
+             "drop n [] = []",
+             "drop n (x:xs) = drop (n-1) xs",
+             "",
+             "nats = 1:map (\\x -> x + 1) nats",
+             "",
+             "main = length (take (length [1,2,3,4,5]) ones)",
              -- "main = length [1,2,3]",
-             "main = let xy = steppers 3",
-             "           inc = fst xy",
-             "           dec = snd xy",
-             "       in dec 4",
-             -- "main = let nats = 1:map (\\x -> x + 1) nats in nats",
+             -- "main = let xy = steppers 3",
+             -- "           inc = fst xy",
+             -- "           dec = snd xy",
+             -- "       in dec 4",
+             -- "main = drop 3 nats",
+             -- "main = steppers 3",
              ""
              ]  
       ParseOk mod = parseModule src
@@ -65,6 +72,6 @@ test = do
       result <- liftM prettyPrint $ liftST (liftM toSource $ flatten main)
       reduceStep main
       return result)
-  where steps = 2
+  where steps = 30
         
 main = putStrLn $ runST $ runVis test

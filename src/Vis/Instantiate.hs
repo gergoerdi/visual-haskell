@@ -28,13 +28,12 @@ cloneNode :: CNode s -> Cloner s (CNode s)
 cloneNode node = do
   payload <- lift $ readPayload node
   case payload of
+    -- Knot _ -> return node
     ParamRef x -> do
       actual <- asks (Map.lookup x)
       case actual of
         Just actual -> return actual
         Nothing -> cloneNode'
-    CaseApp _ _ _ -> do
-      return node
     _ -> cloneNode'
     
   where cloneNode' = do
@@ -53,10 +52,11 @@ cloneNode node = do
 clonePayload :: Payload (CNode s) -> Cloner s (Payload (CNode s))
 clonePayload Uninitialized = error "Consistency error: cloning an unfilled payload"
 clonePayload (Knot node) = return $ Knot node
+clonePayload (Lambda pat node) = Lambda pat <$> cloneNode node
 clonePayload (IntLit n) = return $ IntLit n
 clonePayload (App e f) = App <$> cloneNode e <*> cloneNode f
 clonePayload (BuiltinFunApp f args) = BuiltinFunApp f <$> mapM cloneNode args
-clonePayload (CaseApp arity alts args) = error "Cloning a CaseApp"
+clonePayload (Case alts args) = Case <$> mapM cloneAlt alts <*> mapM cloneNode args
 clonePayload (ConApp c args) = ConApp c <$> mapM cloneNode args
 clonePayload (ParamRef x) = return $ ParamRef x
 
