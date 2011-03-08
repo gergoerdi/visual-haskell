@@ -16,24 +16,29 @@ newtype Vis s a = Vis { unVis :: StateT Serial (ST s) a }
 
 runVis f = evalStateT (unVis f) firstSerial
 
-liftST :: ST s a -> Vis s a
-liftST = Vis . lift
-
-readPayload :: CNode s -> Vis s (Payload (CNode s))
+readPayload :: MonadCNode m s => CNode s -> m (Payload (CNode s))
 readPayload = liftST . readSTRef . cnodePayload
 
-writePayload :: CNode s -> Payload (CNode s) -> Vis s ()
+writePayload :: MonadCNode m s => CNode s -> Payload (CNode s) -> m ()
 writePayload node = liftST . writeSTRef (cnodePayload node)
 
 unsupported x = fail $ unwords ["Unsupported language feature", x]
 
-class MonadCNode m s | m -> s where
-  mkCNode :: Maybe Name -> Payload (CNode s) -> m (CNode s)
-  mkCNode_ :: Maybe Name -> m (CNode s)
-  mkCNode_ name = mkCNode name Uninitialized
-
+class (Applicative m, Monad m) => MonadCNode m s | m -> s where
+  liftCNode :: Vis s a -> m a  
+  
 instance MonadCNode (Vis s) s where
-  mkCNode name p = CNode <$> nextSerial <*> pure name <*> liftST (newSTRef p)
+  liftCNode = id
+  
+liftST :: MonadCNode m s => ST s a -> m a  
+liftST = liftCNode . Vis . lift
+
+mkCNode :: MonadCNode m s => Maybe Name -> Payload (CNode s) -> m (CNode s)
+mkCNode name p = CNode <$> liftCNode nextSerial <*> pure name <*> liftST (newSTRef p)
+
+mkCNode_ :: MonadCNode m s => Maybe Name -> m (CNode s)
+mkCNode_ name = mkCNode name Uninitialized
+
 
 nextSerial :: Vis s Serial
 nextSerial = Vis (get <* modify succ)

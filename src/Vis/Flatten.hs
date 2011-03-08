@@ -19,17 +19,20 @@ newtype SeenNodes = SeenNodes { unSeenNodes :: Map Serial Bool }
 sharedNodes :: CNode s -> ST s [Serial]
 sharedNodes node = map fst <$> filter snd <$> Map.toAscList <$> 
                      unSeenNodes <$> execStateT (collectNode node) (SeenNodes mempty)
-  where collectNode (CNode serial name refPayload) = do
+  where collectNode = collectNode' False
+        
+        collectNode' force (CNode serial name refPayload) = do
           lookup <- gets $ Map.lookup serial . unSeenNodes 
           case lookup of
             Nothing -> do
-              modify $ SeenNodes . Map.insert serial False . unSeenNodes
+              modify $ SeenNodes . Map.insert serial force . unSeenNodes
               payload <- lift $ readSTRef refPayload
               collectPayload payload
             Just False -> do
               modify $ SeenNodes . Map.insert serial True . unSeenNodes
             Just True -> return ()
         
+        collectPayload (Knot node) = collectNode' True node
         collectPayload (App e f) = collectNode e >> collectNode f
         collectPayload (BuiltinFunApp _ args) = mapM_ collectNode args
         collectPayload (ConApp _ args) = mapM_ collectNode args
@@ -83,6 +86,7 @@ flattenNode node@(CNode serial name refPayload) = ensureVar node $ do
   liftM FNode $ flattenPayload payload
 
 flattenPayload :: Payload (CNode s) -> ToSource s (Payload FNode)
+flattenPayload (Knot node) = Knot <$> flattenNode node
 flattenPayload (App e f) = liftM2 App (flattenNode e) (flattenNode f)
 flattenPayload (BuiltinFunApp op args) = liftM (BuiltinFunApp op) $ mapM flattenNode args
 flattenPayload (ConApp c args) = liftM (ConApp c) $ mapM flattenNode args

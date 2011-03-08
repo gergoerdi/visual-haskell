@@ -54,6 +54,7 @@ data BuiltinFun = IntPlus
                 deriving Show
                
 data Payload node = Uninitialized
+                  | Knot node
                   | ParamRef Name
                   | IntLit Integer
                   | App node node

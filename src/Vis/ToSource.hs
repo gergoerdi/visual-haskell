@@ -81,6 +81,7 @@ ensureLen l es = es ++ replicate (l - length es) H.HsWildCard
 
 projectPayload :: Payload FNode -> H.HsExp
 projectPayload Uninitialized = H.HsWildCard
+projectPayload (Knot node) = H.HsIrrPat $ projectNode node
 projectPayload (ParamRef x) = H.HsVar $ projectName x
 projectPayload (IntLit n) = H.HsLit $ H.HsInt n  
 projectPayload (App e f) = H.HsApp (projectNode e) (projectNode f)

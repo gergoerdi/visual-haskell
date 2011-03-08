@@ -1,4 +1,4 @@
-module Vis.Instantiate (instantiate, FormalMap) where
+module Vis.Instantiate (clone, instantiate, FormalMap) where
 
 import Vis.Node
 import Vis.Monad
@@ -15,10 +15,11 @@ type FormalMap s = Map Name (CNode s)
 
 type Cloner s a = RWST (FormalMap s) () (NodeMap s) (Vis s) a
 
-
 withoutVars :: [Name] -> Cloner s a -> Cloner s a
 withoutVars vars = local removeVars
   where removeVars formals = foldl (flip Map.delete) formals vars
+
+clone = instantiate mempty
 
 instantiate :: FormalMap s -> CNode s -> Vis s (CNode s)
 instantiate actuals node = fst <$> (evalRWST (cloneNode node) actuals mempty)
@@ -51,6 +52,7 @@ cloneNode node = do
 
 clonePayload :: Payload (CNode s) -> Cloner s (Payload (CNode s))
 clonePayload Uninitialized = error "Consistency error: cloning an unfilled payload"
+clonePayload (Knot node) = return $ Knot node
 clonePayload (IntLit n) = return $ IntLit n
 clonePayload (App e f) = App <$> cloneNode e <*> cloneNode f
 clonePayload (BuiltinFunApp f args) = BuiltinFunApp f <$> mapM cloneNode args

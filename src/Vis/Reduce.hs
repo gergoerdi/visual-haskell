@@ -1,5 +1,5 @@
-{-# LANGUAGE DeriveFunctor, GeneralizedNewtypeDeriving #-}
-module Vis.Reduce (reduce) where
+{-# LANGUAGE DeriveFunctor, GeneralizedNewtypeDeriving, FlexibleInstances, MultiParamTypeClasses #-}
+module Vis.Reduce (reduceStep) where
 
 import Vis.Node
 import Vis.Monad
@@ -13,17 +13,23 @@ import Control.Monad.ST
 import Data.STRef
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Control.Monad.RWS
+import Control.Monad.Reader
 import Control.Monad.Writer
 import Data.Maybe
 import Control.Monad.Trans.Maybe
+
+newtype Reduce s a = Reduce { unReduce :: ReaderT () (Vis s) a }
+                   deriving (Monad, Functor, Applicative)
+                            
+instance MonadCNode (Reduce s) s where                            
+  liftCNode = Reduce . lift
 
 snoc :: [a] -> a -> [a]
 snoc xs x = xs ++ [x]
 
 reduceBuiltinBinaryInt op node left right = do
-  reduceFully left
-  reduceFully right
+  reduceWHNF left
+  reduceWHNF right
   IntLit n <- readPayload left
   IntLit m <- readPayload right
   writePayload node $ IntLit $ n `op` m
@@ -34,17 +40,20 @@ reduceBuiltin IntPlus node [left, right] = reduceBuiltinBinaryInt (+) node left 
 reduceBuiltin IntMinus node [left, right] = reduceBuiltinBinaryInt (-) node left right
 reduceBuiltin _ _ _ = return False
                 
-reduceFully :: CNode s -> Vis s ()    
-reduceFully node = do
-  changed <- reduce node
-  when changed $ reduceFully node
+reduceWHNF :: CNode s -> Vis s ()    
+reduceWHNF node = do
+  changed <- reduceStep node
+  when changed $ reduceWHNF node
     
-reduce :: CNode s -> Vis s Bool
-reduce node = do
+reduceStep :: CNode s -> Vis s Bool
+reduceStep node = do
   payload <- readPayload node
-  case payload of
+  case payload of    
+    Knot node -> do
+      node' <- clone node
+      overwriteWith node'
     App f arg -> do
-      reduceFully f            
+      reduceWHNF f            
       payloadFun <- readPayload f
       let payload' = case payloadFun of
             ConApp con args -> ConApp con (snoc args arg)        
@@ -58,10 +67,12 @@ reduce node = do
       node' <- applyCase alts args
       case node' of
         Nothing -> return False
-        Just node' -> do
+        Just node' -> overwriteWith node'          
+    _ -> return False    
+    
+  where overwriteWith node' = do
           writePayload node =<< readPayload node'
           return True
-    _ -> return False    
 
 applyCase :: [Alt (CNode s)] -> [CNode s] -> Vis s (Maybe (CNode s))
 applyCase alts args = do
@@ -86,17 +97,17 @@ match pats ns = fmap (Map.fromList) <$> (runMaybeT $ execWriterT $ zipWithM_ col
         collect H.HsPWildCard node = return ()
         collect (H.HsPParen pat) node = collect pat node
         collect (H.HsPLit (H.HsInt n)) node = do 
-          (lift . lift) $ reduceFully node
+          (lift . lift) $ reduceWHNF node
           IntLit n' <- (lift . lift) $ readPayload node
           guard $ n' == n
         collect (H.HsPApp con pats) node = do          
           con' <- fromName con
-          (lift . lift) $ reduce node
+          (lift . lift) $ reduceWHNF node
           ConApp conActual nodes <- (lift . lift) $ readPayload node
           guard $ conActual == con'
           zipWithM_ collect pats nodes
         collect (H.HsPTuple pats) node = do
-          (lift . lift) $ reduceFully node
+          (lift . lift) $ reduceWHNF node
           ConApp conActual nodes <- (lift . lift) $ readPayload node
           guard $ conActual == Special (H.HsTupleCon (length pats))
           zipWithM_ collect pats nodes          

@@ -26,7 +26,7 @@ newtype FromSource s a = FromSource { unFromSource :: ReaderT (Map Name (CNode s
 runFromSource f = runReaderT (unFromSource f) Map.empty
 
 instance MonadCNode (FromSource s) s where
-  mkCNode name = FromSource . lift . mkCNode name
+  liftCNode = FromSource . lift
 
 
 lookupBind :: Name -> FromSource s (Maybe (CNode s))
@@ -41,9 +41,9 @@ withVars vars f = do
 
 setVar :: Name -> CNode s -> FromSource s ()
 setVar x node = do
-  payload <- FromSource $ lift $ liftST $ readSTRef $ cnodePayload node
+  payload <- liftST $ readSTRef $ cnodePayload node
   node' <- fromJust <$> lookupBind x
-  FromSource $ lift $ writePayload node' payload
+  writePayload node' payload
 
 
 builtinFromName (Name (H.HsSymbol "+")) = Just IntPlus
@@ -97,7 +97,7 @@ fromExpr (H.HsVar x) = do
     Nothing -> do
       bind <- lookupBind x'
       case bind of
-        Just node -> return node
+        Just node -> mkCNode Nothing (Knot node)
         Nothing -> mkCNode (Just x') $ ParamRef x'
 fromExpr (H.HsLet decls body) = do
   withDecls decls $ do

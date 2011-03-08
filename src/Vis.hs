@@ -44,11 +44,11 @@ test = do
              "take n (x:xs) = x:take (n-1) xs",
              "",
              -- "main = take (length [1,2,3,4,5]) ones",
-             "main = length [1,2,3]",
-             -- "main = let xy = steppers 3",
-             -- "           inc = fst xy",
-             -- "           dec = snd xy",
-             -- "       in dec 4",
+             -- "main = length [1,2,3]",
+             "main = let xy = steppers 3",
+             "           inc = fst xy",
+             "           dec = snd xy",
+             "       in dec 4",
              -- "main = let nats = 1:map (\\x -> x + 1) nats in nats",
              ""
              ]  
@@ -63,7 +63,7 @@ test = do
     return main  
   unlines <$> (replicateM steps $ do      
       result <- liftM prettyPrint $ liftST (liftM toSource $ flatten main)
-      reduce main
+      reduceStep main
       return result)
   where steps = 2
         
