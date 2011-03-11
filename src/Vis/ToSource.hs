@@ -16,7 +16,9 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Monoid
 
-toSource :: FNode -> H.HsExp
+import Name
+
+toSource :: FNode Name -> H.HsExp
 toSource = parenExpr . projectNode
 
 paren :: H.HsExp -> H.HsExp                 
@@ -58,7 +60,7 @@ parenMatch (H.HsMatch loc name pats rhs wheres) = H.HsMatch loc name pats (paren
 parenRhs (H.HsUnGuardedRhs expr) = H.HsUnGuardedRhs $ parenExpr expr
 
 
-projectNode :: FNode -> H.HsExp
+projectNode :: FNode Name -> H.HsExp
 projectNode (FNode payload) = projectPayload payload
 projectNode (FVarRef x) = H.HsVar $ projectFName x
 projectNode (FLet binds body) = H.HsLet (map toBind binds) $ projectNode body
@@ -69,7 +71,7 @@ projectNode (FLet binds body) = H.HsLet (map toBind binds) $ projectNode body
     toBind (Bind var def) = H.HsPatBind noLoc 
                             (H.HsPVar $ projectVar var) 
                             (H.HsUnGuardedRhs $ projectNode def) []
-    projectVar (Given (Name n)) = n
+    projectVar (Given n) = H.HsIdent $ occNameString $ nameOccName n
     projectVar (Generated s) = H.HsIdent $ "v" ++ show (unSerial s)
 
 toApp = foldl1 H.HsApp
@@ -77,20 +79,21 @@ toApp = foldl1 H.HsApp
 projectFName (Given n) = projectName n
 projectFName (Generated s) = H.UnQual $ H.HsIdent $ "v" ++ show (unSerial s)
 
-projectName (Name n) = H.UnQual n
-projectName (Special s) = H.Special s
+-- projectName (Name n) = H.UnQual n
+-- projectName (Special s) = H.Special s
+projectName name = H.UnQual $ H.HsSymbol $ occNameString $ nameOccName name
 
 noLoc = error "No location"
 
 ensureLen l es = es ++ replicate (l - length es) H.HsWildCard
 
-projectPayload :: Payload FNode -> H.HsExp
+projectPayload :: Payload Name (FNode Name) -> H.HsExp
 projectPayload Uninitialized = H.HsWildCard
 projectPayload (Knot node) = H.HsIrrPat $ paren $ projectNode node
-projectPayload (Lambda pat node) = H.HsLambda noLoc [pat] $ projectNode node
+projectPayload (Lambda pat node) = H.HsLambda noLoc [projectPat pat] $ projectNode node
 projectPayload (ParamRef x) = H.HsVar $ projectName x
-projectPayload (IntLit n) = H.HsLit $ H.HsInt n  
-projectPayload (App e f) = H.HsApp (projectNode e) (projectNode f)
+projectPayload (Lit (IntLit n)) = H.HsLit $ H.HsInt n  
+projectPayload (App e args) = toApp (projectNode e:map projectNode args)
 projectPayload (BuiltinFunApp op args) = toApp $ fun:(map projectNode args)
   where fun = case op of
           IntPlus -> H.HsVar (H.UnQual $ H.HsSymbol "+#")
@@ -104,8 +107,11 @@ projectPayload (ConApp c args) = toApp $ con:(map projectNode args)
 --           [arg] -> projectNode arg        
 --         projectAlt (Alt [pat] node) = H.HsAlt noLoc pat (H.HsUnGuardedAlt $ projectNode node) []
 projectPayload (Case alts [arg]) = H.HsCase (projectNode arg) $ map projectAlt alts
-  where projectAlt (Alt [pat] node) = H.HsAlt noLoc pat (H.HsUnGuardedAlt $ projectNode node) []
+  where projectAlt (Alt [pat] node) = H.HsAlt noLoc (projectPat pat) (H.HsUnGuardedAlt $ projectNode node) []
 projectPayload (Case alts args) = H.HsCase expr $ map projectAlt alts
   where expr = H.HsTuple $ map projectNode args
         projectAlt (Alt pats node) = let body = projectNode node
-                                     in H.HsAlt noLoc (H.HsPTuple pats) (H.HsUnGuardedAlt body) []
+                                     in H.HsAlt noLoc (H.HsPTuple $ map projectPat pats) (H.HsUnGuardedAlt body) []
+
+projectPat :: Pat Name -> H.HsPat
+projectPat = error "projectPat"

@@ -1,4 +1,4 @@
-{-# LANGUAGE DeriveFunctor, GeneralizedNewtypeDeriving, MultiParamTypeClasses, FunctionalDependencies, FlexibleInstances #-}
+{-# LANGUAGE DeriveFunctor, GeneralizedNewtypeDeriving, MultiParamTypeClasses, FunctionalDependencies, FlexibleInstances, UndecidableInstances #-}
 module Vis.Monad where
 
 import Vis.Node
@@ -16,27 +16,33 @@ newtype Vis s a = Vis { unVis :: StateT Serial (ST s) a }
 
 runVis f = evalStateT (unVis f) firstSerial
 
-readPayload :: MonadCNode m s => CNode s -> m (Payload (CNode s))
+readPayload :: MonadCNode m s => CNode s name -> m (Payload name (CNode s name))
 readPayload = liftST . readSTRef . cnodePayload
 
-writePayload :: MonadCNode m s => CNode s -> Payload (CNode s) -> m ()
+writePayload :: MonadCNode m s => CNode s name -> Payload name (CNode s name) -> m ()
 writePayload node = liftST . writeSTRef (cnodePayload node)
 
 unsupported x = fail $ unwords ["Unsupported language feature", x]
 
-class (Applicative m, Monad m) => MonadCNode m s | m -> s where
+class (Monad m) => MonadCNode m s | m -> s where
   liftCNode :: Vis s a -> m a  
   
 instance MonadCNode (Vis s) s where
   liftCNode = id
   
+instance (MonadTrans t, Monad (t m), Monad m, MonadCNode m s) => MonadCNode (t m) s where
+  liftCNode = lift . liftCNode
+
 liftST :: MonadCNode m s => ST s a -> m a  
 liftST = liftCNode . Vis . lift
 
-mkCNode :: MonadCNode m s => Maybe Name -> Payload (CNode s) -> m (CNode s)
-mkCNode name p = CNode <$> liftCNode nextSerial <*> pure name <*> liftST (newSTRef p)
+mkCNode :: MonadCNode m s => Maybe name -> Payload name (CNode s name) -> m (CNode s name)
+mkCNode name p = do
+  serial <- liftCNode nextSerial
+  payload <- liftST (newSTRef p)
+  return $ CNode serial name payload
 
-mkCNode_ :: MonadCNode m s => Maybe Name -> m (CNode s)
+mkCNode_ :: MonadCNode m s => Maybe name -> m (CNode s name)
 mkCNode_ name = mkCNode name Uninitialized
 
 

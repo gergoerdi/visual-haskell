@@ -1,8 +1,8 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Vis.Node (
   BuiltinFun(..), 
-  CNode(..), FNode(..),
-  Bind(..), Alt(..), Pat(..), Payload(..), Lit(..),
+  CPayload, CNode(..), FPayload, FNode(..),
+  Bind(..), Alt(..), Pat(..), Payload(..), Lit(..),  
   FName(..),
   Serial(unSerial), firstSerial
   ) where
@@ -17,17 +17,6 @@ import Language.Haskell.Pretty
 newtype Serial = Serial { unSerial :: Int } deriving (Show, Eq, Ord, Enum)
 firstSerial = Serial 0
 
--- A node in the cyclic representation
-data CNode s name = CNode { cnodeSerial :: Serial, 
-                            cnodeName :: Maybe name,
-                            cnodePayload :: STRef s (Payload name (CNode s name)) }
-               
--- A node in the flattened representation               
-data FNode name = FNode (Payload name (FNode name))
-                | FLet [Bind name] (FNode name)
-                | FVarRef (FName name)
-                deriving Show
-                    
 data Pat name = PConApp name [Pat name]
               | PVar name
               | PWildcard
@@ -36,6 +25,7 @@ data Pat name = PConApp name [Pat name]
               deriving Show
                     
 data Lit = IntLit Integer                  
+         | CharLit Char
          deriving Show
                        
 data Bind name = Bind (FName name) (FNode name)
@@ -58,12 +48,26 @@ data Payload name node = Uninitialized
                        | Lambda (Pat name) node
                        | ParamRef name
                        | Lit Lit
-                       | App node node
+                       | App node [node]
                        | BuiltinFunApp BuiltinFun [node]
                        | Case [Alt name node] [node]
                        | ConApp name [node]
                        deriving Show
+                                
+type CPayload s name = Payload name (CNode s name)
+type FPayload name = Payload name (FNode name)
 
+-- A node in the cyclic representation
+data CNode s name = CNode { cnodeSerial :: Serial, 
+                            cnodeName :: Maybe name,
+                            cnodePayload :: STRef s (CPayload s name) }
+               
+-- A node in the flattened representation               
+data FNode name = FNode (FPayload name)
+                | FLet [Bind name] (FNode name)
+                | FVarRef (FName name)
+                deriving Show
+                    
 instance Eq (CNode s name) where
   (==) = (==) `on` cnodeSerial
 
