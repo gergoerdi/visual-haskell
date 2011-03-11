@@ -88,18 +88,19 @@ fromDecl (H.HsFunBind ms) = do
   varRefs <- forM vars $ \var -> 
     mkCNode Nothing $ ParamRef $ Name var
   node <- mkCNode Nothing $ Case alts varRefs
-  node' <- foldM `flip` node `flip` vars $ \node var -> 
-    mkCNode (Just f) $ Lambda (H.HsPVar var) node  
-  return (f, node')
+  node' <- toLambda (map H.HsPVar vars) node
+  return (f, node'{cnodeName = Just f})
+
+toLambda :: [Pat] -> CNode s -> FromSource s (CNode s)
+toLambda pats node = do
+  foldM `flip` node `flip` (reverse pats) $ \node pat ->
+    mkCNode Nothing $ Lambda pat node
 
 fromExpr :: H.HsExp -> FromSource s (CNode s)
 fromExpr (H.HsParen expr) = fromExpr expr
 fromExpr (H.HsLit (H.HsInt n)) = mkCNode Nothing (IntLit n)
 fromExpr (H.HsApp f x) = mkCNode Nothing =<< (App <$> fromExpr f <*> fromExpr x)
-fromExpr (H.HsLambda _ pats expr) = do
-  node <- fromExpr expr 
-  foldM `flip` node `flip` pats $ \node pat -> 
-    mkCNode Nothing $ Lambda pat node
+fromExpr (H.HsLambda _ pats expr) = toLambda pats =<< fromExpr expr
 fromExpr (H.HsVar x) = do
   x' <- fromName x
   case builtinFromName x' of

@@ -23,6 +23,7 @@ paren :: H.HsExp -> H.HsExp
 paren e@(H.HsParen _) = e
 paren e@(H.HsLit _) = e
 paren e@(H.HsVar _) = e
+paren e@(H.HsTuple _) = e
 paren e = H.HsParen e
                  
 parenExpr (H.HsApp (H.HsApp op left) right) | Just opName <- getInfix = H.HsInfixApp left' opName right'
@@ -37,6 +38,7 @@ parenExpr (H.HsApp (H.HsApp op left) right) | Just opName <- getInfix = H.HsInfi
         left' = forceTopParen $ parenExpr left
         right' = forceTopParen $ parenExpr right          
 parenExpr (H.HsApp e f@(H.HsApp _ _)) = H.HsApp (parenExpr e) (paren (parenExpr f))
+parenExpr (H.HsApp e f@(H.HsLambda _ _ _)) = H.HsApp (parenExpr e) (paren (parenExpr f))
 parenExpr (H.HsApp e f) = H.HsApp (parenExpr e) (parenExpr f)
 parenExpr (H.HsLambda loc pats body) = H.HsLambda loc pats $ parenExpr body
 parenExpr (H.HsLet decls body) = H.HsLet (map parenDecl decls) $ parenExpr body
