@@ -2,7 +2,7 @@ module Vis.FromSTGTest where
 
 import Vis.FromSTG
 import Vis.Node
-import Vis.Monad
+import Vis.CNode
 import Vis.GHC.CompileToSTG
 
 import Vis.Flatten
@@ -14,8 +14,6 @@ import StgSyn
 import Outputable
 
 import Control.Applicative
-import Control.Monad.RWS
-import qualified Data.Map as Map
 
 main :: IO ()
 main = do
@@ -23,7 +21,7 @@ main = do
   printDump $ pprStgBindingsWithSRTs stg    
   
   putStrLn $ unlines $ runST $ do
-    cnodes <- runVis $ liftM fst $ evalRWST `flip` Map.empty `flip` firstSerial $ do
-      concat <$> fromBindings (map fst stg)
-    fnodes <- mapM flatten cnodes
+    fnodes <- runCNodeM $ do
+      cnodes <- runFromSTG (concat <$> fromBindings (map fst stg))
+      mapM flatten cnodes
     return $ map (prettyPrint . toSource) fnodes ++ map show fnodes

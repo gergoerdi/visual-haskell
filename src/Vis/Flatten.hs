@@ -1,33 +1,30 @@
 module Vis.Flatten (flatten) where
 
 import Vis.Node
+import Vis.CNode
 
-import Language.Haskell.Pretty
 import Control.Applicative
 import Control.Arrow
 import Control.Monad
 import Control.Monad.RWS
 import Control.Monad.State (execStateT)
-import Control.Monad.ST
-import Data.STRef
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Monoid
 
 newtype SeenNodes = SeenNodes { unSeenNodes :: Map Serial Bool }
 
-sharedNodes :: CNode s name -> ST s [Serial]
+sharedNodes :: CNode s name -> CNodeM s [Serial]
 sharedNodes node = map fst <$> filter snd <$> Map.toAscList <$> 
                      unSeenNodes <$> execStateT (collectNode node) (SeenNodes mempty)
   where collectNode = collectNode' False
                       
-        collectNode' force (CNode serial name refPayload) = do
+        collectNode' force node = do
+          let serial = cnodeSerial node
           lookup <- gets $ Map.lookup serial . unSeenNodes 
           case lookup of
             Nothing -> do
               modify $ SeenNodes . Map.insert serial force . unSeenNodes
-              payload <- lift $ readSTRef refPayload
-              collectPayload payload
+              readPayload node >>= collectPayload
             Just False -> do
               modify $ SeenNodes . Map.insert serial True . unSeenNodes
             Just True -> return ()
@@ -40,22 +37,23 @@ sharedNodes node = map fst <$> filter snd <$> Map.toAscList <$>
         collectPayload (Case alts args) = mapM_ collectAlt alts >> mapM_ collectNode args        
         collectPayload _ = return ()
         
-        collectAlt (Alt pats body) = collectNode body
+        collectAlt (Alt _ body) = collectNode body
 
 newtype VarMap name = VarMap { unVarMap :: Map Serial (Maybe (FName name)) }
 
 mkVarMap shareds = VarMap $ Map.fromAscList $ map (id &&& const Nothing) shareds
 
-type ToSource s name a = RWST () [(FName name, FNode name)] (VarMap name) (ST s) a
+type ToSource s name a = RWST () [(FName name, FNode name)] (VarMap name) (CNodeM s) a
 
 ensureVar :: CNode s name -> ToSource s name (FNode name) -> ToSource s name (FNode name)
-ensureVar node@(CNode serial name _) f = do
+ensureVar node f = do
+  let serial = cnodeSerial node
   lookup <- gets $ Map.lookup serial . unVarMap
   case lookup of
     Nothing -> f
     Just Nothing -> do
       let insert v = VarMap . Map.insert serial (Just v) . unVarMap          
-      var <- case name of
+      var <- case cnodeName node of
         Nothing -> do
           let var = Generated serial
           modify $ insert var
@@ -75,17 +73,16 @@ scope f = do
     [] -> expr
     _ -> FLet (map (uncurry Bind) binds) expr    
 
-flatten :: CNode s name -> ST s (FNode name)
+flatten :: CNode s name -> CNodeM s (FNode name)
 flatten node = do
   shareds <- sharedNodes node 
   (src, []) <- evalRWST (scope $ flattenNode node) () (mkVarMap shareds)
   return src
 
 flattenNode :: CNode s name -> ToSource s name (FNode name)
-flattenNode node@(CNode serial name refPayload) = ensureVar node $ do
-  payload <- lift $ readSTRef refPayload
-  liftM FNode $ flattenPayload payload
-
+flattenNode node = ensureVar node $ do
+  FNode <$> (readPayload node >>= flattenPayload)
+  
 flattenPayload :: Payload name (CNode s name) -> ToSource s name (FPayload name)
 flattenPayload (Knot node) = Knot <$> flattenNode node
 flattenPayload (Lambda pat node) = Lambda pat <$> flattenNode node

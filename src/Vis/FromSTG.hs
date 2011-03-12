@@ -1,7 +1,7 @@
 module Vis.FromSTG where
 
 import Vis.Node
-import Vis.Monad
+import Vis.CNode
 
 import StgSyn
 import CoreSyn (AltCon(..))
@@ -10,12 +10,14 @@ import Name
 import Literal
 
 import Control.Applicative
-import Control.Monad.RWS
+import Control.Monad.Reader
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe
 
-type FromSource s a = RWST (Map Name (CNode s Name)) () Serial (Vis s) a
+type FromSTG s a = ReaderT (Map Name (CNode s Name)) (CNodeM s) a
+
+runFromSTG = runReaderT `flip` Map.empty
 
 withVars vars f = do
   newBinds <- forM vars $ \var -> do
@@ -23,7 +25,7 @@ withVars vars f = do
     return (var, node)
   local (Map.union `flip` Map.fromList newBinds) f
 
-withBinding :: StgBinding -> ([Name] -> FromSource s a) -> FromSource s a
+withBinding :: StgBinding -> ([Name] -> FromSTG s a) -> FromSTG s a
 withBinding binding f = do
   let bindings = bindingList binding
   let vars = map fst bindings
@@ -34,20 +36,20 @@ withBinding binding f = do
     
 lookupBind x = asks $ Map.lookup x
 
--- setVar :: Name -> CNode s -> FromSource s ()
+-- setVar :: Name -> CNode s -> FromSTG s ()
 setVar x node = do
   payload <- readPayload node
   node' <- fromJust <$> lookupBind x
   writePayload node' payload
 
-fromExpr :: StgExpr -> FromSource s (CNode s Name)
+fromExpr :: StgExpr -> FromSTG s (CNode s Name)
 fromExpr (StgSCC _ e) = fromExpr e
 fromExpr (StgTick _ _ e) = fromExpr e
 fromExpr (StgLit lit) = mkCNode Nothing $ Lit $ fromLit lit
 fromExpr (StgLam _ vars body) = error "TODO: StgLam"
 fromExpr (StgApp f args) = mkCNode Nothing =<< App <$> fromVar f <*> mapM fromArg args
 fromExpr (StgConApp con args) = mkCNode Nothing =<< (ConApp (dataConName con) <$> mapM fromArg args)
-fromExpr (StgOpApp op args _) = error "StgOpApp"
+fromExpr (StgOpApp op args _) = error "TODO: StgOpApp"
 fromExpr (StgCase e _ _ _ _ _ (a:as)) = do
   alts <- mapM fromAlt (as ++ [a]) -- we rotate a:as to make sure the wildcard case (if any) is the last one
   node <- fromExpr e
@@ -62,14 +64,14 @@ fromVar v = do
     Just node -> return node
     Nothing -> mkCNode Nothing $ ParamRef x
 
-fromAlt :: StgAlt -> FromSource s (Alt Name (CNode s Name))
+fromAlt :: StgAlt -> FromSTG s (Alt Name (CNode s Name))
 fromAlt (con, vars, _, e) = Alt [pat] <$> fromExpr e
   where pat = case con of
           DEFAULT -> PWildcard
           LitAlt l -> PLit $ fromLit l
           DataAlt c -> PConApp (getName c) $ map (PVar . getName) vars
 
-fromArg :: StgArg -> FromSource s (CNode s Name)
+fromArg :: StgArg -> FromSTG s (CNode s Name)
 fromArg (StgVarArg v) = fromVar v
 fromArg (StgLitArg lit) = mkCNode Nothing $ Lit $ fromLit lit
 
