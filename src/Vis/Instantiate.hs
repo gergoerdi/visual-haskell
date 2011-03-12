@@ -1,30 +1,31 @@
+{-# LANGUAGE NoMonomorphismRestriction #-}
 module Vis.Instantiate (clone, instantiate, FormalMap) where
 
 import Vis.Node
-import Vis.Monad
-import Vis.FromSource
+import Vis.CNode
 
 import Control.Applicative
 import Data.STRef
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Control.Monad.RWS
+import Control.Monad.Writer
 
-type NodeMap s = Map (CNode s) (CNode s)
-type FormalMap s = Map Name (CNode s)
+type NodeMap s name = Map (CNode s name) (CNode s name)
+type FormalMap s name = Map name (CNode s name)
 
-type Cloner s a = RWST (FormalMap s) () (NodeMap s) (Vis s) a
+type Cloner s name a = RWST (FormalMap s name) () (NodeMap s name) (CNodeM s) a
 
-withoutVars :: [Name] -> Cloner s a -> Cloner s a
+withoutVars :: Ord name => [name] -> Cloner s name a -> Cloner s name a
 withoutVars vars = local removeVars
   where removeVars formals = foldl (flip Map.delete) formals vars
 
 clone = instantiate mempty
 
-instantiate :: FormalMap s -> CNode s -> Vis s (CNode s)
+instantiate :: Ord name => FormalMap s name -> CNode s name -> CNodeM s (CNode s name)
 instantiate actuals node = fst <$> (evalRWST (cloneNode node) actuals mempty)
 
-cloneNode :: CNode s -> Cloner s (CNode s)
+cloneNode :: Ord name => CNode s name -> Cloner s name (CNode s name)
 cloneNode node = do
   payload <- lift $ readPayload node
   case payload of
@@ -49,15 +50,19 @@ cloneNode node = do
               return node'
           
 
-clonePayload :: Payload (CNode s) -> Cloner s (Payload (CNode s))
-clonePayload Uninitialized = error "Consistency error: cloning an unfilled payload"
+clonePayload :: Ord name => CPayload s name -> Cloner s name (CPayload s name)
 clonePayload (Knot node) = return $ Knot node
 clonePayload (Lambda pat node) = Lambda pat <$> cloneNode node
-clonePayload (IntLit n) = return $ IntLit n
-clonePayload (App e f) = App <$> cloneNode e <*> cloneNode f
+clonePayload (Lit n) = return $ Lit n
+clonePayload (App e args) = App <$> cloneNode e <*> mapM cloneNode args
 clonePayload (BuiltinFunApp f args) = BuiltinFunApp f <$> mapM cloneNode args
 clonePayload (Case alts args) = Case <$> mapM cloneAlt alts <*> mapM cloneNode args
 clonePayload (ConApp c args) = ConApp c <$> mapM cloneNode args
 clonePayload (ParamRef x) = return $ ParamRef x
 
-cloneAlt (Alt pats body) = Alt pats <$> (withoutVars (concatMap bindsFromPat pats) $ cloneNode body)
+cloneAlt (Alt pats body) = Alt pats <$> withoutVars vars (cloneNode body)
+  where vars = execWriter $ mapM_ varsOf pats
+        varsOf (PConApp _ pats) = mapM_ varsOf pats
+        varsOf (PVar x) = tell [x]
+        varsOf (PAsPat x pat) = tell [x] >> varsOf pat
+        varsOf _ = return ()
