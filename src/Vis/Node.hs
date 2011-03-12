@@ -21,7 +21,7 @@ data Pat name = PConApp name [Pat name]
               | PVar name
               | PWildcard
               | PLit Lit
-              | PAsPat (Pat name)
+              | PAsPat name (Pat name)
               deriving Show
                     
 data Lit = IntLit Integer                  
@@ -43,9 +43,8 @@ data BuiltinFun = IntPlus
                 | IntMinus
                 deriving Show
                
-data Payload name node = Uninitialized
-                       | Knot node
-                       | Lambda (Pat name) node
+data Payload name node = Knot node
+                       | Lambda [name] node
                        | ParamRef name
                        | Lit Lit
                        | App node [node]

@@ -43,7 +43,7 @@ mkCNode name p = do
   return $ CNode serial name payload
 
 mkCNode_ :: MonadCNode m s => Maybe name -> m (CNode s name)
-mkCNode_ name = mkCNode name Uninitialized
+mkCNode_ name = mkCNode name $ error "Untied knot"
 
 
 nextSerial :: Vis s Serial

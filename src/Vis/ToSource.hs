@@ -62,7 +62,7 @@ parenRhs (H.HsUnGuardedRhs expr) = H.HsUnGuardedRhs $ parenExpr expr
 
 projectNode :: FNode Name -> H.HsExp
 projectNode (FNode payload) = projectPayload payload
-projectNode (FVarRef x) = H.HsVar $ projectFName x
+projectNode (FVarRef x) = H.HsVar $ H.UnQual $ projectFName x
 projectNode (FLet binds body) = H.HsLet (map toBind binds) $ projectNode body
   where 
     -- toBind (Bind var (FNode (Case alts []))) = H.HsFunBind $ map toMatch alts
@@ -77,21 +77,22 @@ projectNode (FLet binds body) = H.HsLet (map toBind binds) $ projectNode body
 toApp = foldl1 H.HsApp
 
 projectFName (Given n) = projectName n
-projectFName (Generated s) = H.UnQual $ H.HsIdent $ "v" ++ show (unSerial s)
+projectFName (Generated s) = H.HsIdent $ "v" ++ show (unSerial s)
 
 -- projectName (Name n) = H.UnQual n
 -- projectName (Special s) = H.Special s
-projectName name = H.UnQual $ H.HsSymbol $ occNameString $ nameOccName name
+projectName name = (if isSymOcc occ then H.HsSymbol else H.HsIdent) $ occNameString occ
+  where occ = nameOccName name
 
-noLoc = error "No location"
+noLoc = H.SrcLoc "foo" 0 0 -- error "No location"
 
 ensureLen l es = es ++ replicate (l - length es) H.HsWildCard
 
 projectPayload :: Payload Name (FNode Name) -> H.HsExp
-projectPayload Uninitialized = H.HsWildCard
 projectPayload (Knot node) = H.HsIrrPat $ paren $ projectNode node
-projectPayload (Lambda pat node) = H.HsLambda noLoc [projectPat pat] $ projectNode node
-projectPayload (ParamRef x) = H.HsVar $ projectName x
+projectPayload (Lambda [] node) = projectNode node
+projectPayload (Lambda vars node) = H.HsLambda noLoc (map (H.HsPVar . projectName) vars) $ projectNode node
+projectPayload (ParamRef x) = H.HsVar $ H.UnQual $ projectName x
 projectPayload (Lit (IntLit n)) = H.HsLit $ H.HsInt n  
 projectPayload (App e args) = toApp (projectNode e:map projectNode args)
 projectPayload (BuiltinFunApp op args) = toApp $ fun:(map projectNode args)
@@ -99,7 +100,7 @@ projectPayload (BuiltinFunApp op args) = toApp $ fun:(map projectNode args)
           IntPlus -> H.HsVar (H.UnQual $ H.HsSymbol "+#")
           IntMinus -> H.HsVar (H.UnQual $ H.HsSymbol "-#")
 projectPayload (ConApp c args) = toApp $ con:(map projectNode args)
-  where con = H.HsCon $ projectName c
+  where con = H.HsCon $ H.UnQual $ projectName c
 -- projectPayload (Case [Alt pats body] []) = paren $ H.HsLambda noLoc pats $ projectNode body
 -- projectPayload (CaseApp 1 alts args) = H.HsCase expr $ map projectAlt alts
 --   where expr = case args of 
@@ -114,4 +115,6 @@ projectPayload (Case alts args) = H.HsCase expr $ map projectAlt alts
                                      in H.HsAlt noLoc (H.HsPTuple $ map projectPat pats) (H.HsUnGuardedAlt body) []
 
 projectPat :: Pat Name -> H.HsPat
-projectPat = error "projectPat"
+projectPat (PVar x) = H.HsPVar $ projectName x
+projectPat (PAsPat x p) = H.HsPAsPat (projectName x) $ projectPat p
+projectPat (PConApp c ps) = H.HsPApp (H.UnQual $ projectName c) $ map projectPat ps

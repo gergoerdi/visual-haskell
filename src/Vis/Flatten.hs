@@ -94,6 +94,5 @@ flattenPayload (BuiltinFunApp op args) = liftM (BuiltinFunApp op) $ mapM flatten
 flattenPayload (ConApp c args) = liftM (ConApp c) $ mapM flattenNode args
 flattenPayload (Case alts args) = liftM2 Case (mapM flattenAlt alts) (mapM flattenNode args)
   where flattenAlt (Alt pats node) = liftM (Alt pats) $ flattenNode node
-flattenPayload (Uninitialized) = return $ Uninitialized
 flattenPayload (ParamRef x) = return $ ParamRef x
 flattenPayload (Lit l) = return $ Lit l

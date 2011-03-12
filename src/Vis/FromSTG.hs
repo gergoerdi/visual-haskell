@@ -2,17 +2,10 @@ module Vis.FromSTG where
 
 import Vis.Node
 import Vis.Monad
-import Vis.GHC.CompileToSTG
-
-import Vis.Flatten
--- import Vis.ToSource
-import Control.Monad.ST (runST)
 
 import StgSyn
 import CoreSyn (AltCon(..))
 import DataCon
-import Outputable
-import Var 
 import Name
 import Literal
 
@@ -20,23 +13,64 @@ import Control.Applicative
 import Control.Monad.RWS
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Data.Maybe
 
-type FromSource s a = RWST (Map Name (CNode Name s)) () Serial (Vis s) a
+type FromSource s a = RWST (Map Name (CNode s Name)) () Serial (Vis s) a
+
+withVars vars f = do
+  newBinds <- forM vars $ \var -> do
+    node <- mkCNode_ (Just var)
+    return (var, node)
+  local (Map.union `flip` Map.fromList newBinds) f
+
+withBinding :: StgBinding -> ([Name] -> FromSource s a) -> FromSource s a
+withBinding binding f = do
+  let bindings = bindingList binding
+  let vars = map fst bindings
+  withVars vars $ do
+    forM_ bindings $ \(var, rhs) -> do
+      setVar var =<< fromRhs rhs
+    f vars
+    
+lookupBind x = asks $ Map.lookup x
+
+-- setVar :: Name -> CNode s -> FromSource s ()
+setVar x node = do
+  payload <- readPayload node
+  node' <- fromJust <$> lookupBind x
+  writePayload node' payload
 
 fromExpr :: StgExpr -> FromSource s (CNode s Name)
 fromExpr (StgSCC _ e) = fromExpr e
 fromExpr (StgTick _ _ e) = fromExpr e
 fromExpr (StgLit lit) = mkCNode Nothing $ Lit $ fromLit lit
 fromExpr (StgLam _ vars body) = error "TODO: StgLam"
-fromExpr (StgApp f args) = error "StgApp"
+fromExpr (StgApp f args) = mkCNode Nothing =<< App <$> fromVar f <*> mapM fromArg args
 fromExpr (StgConApp con args) = mkCNode Nothing =<< (ConApp (dataConName con) <$> mapM fromArg args)
 fromExpr (StgOpApp op args _) = error "StgOpApp"
-fromExpr (StgCase e _ _ _ _ _ alts) = error "StgCase"
-fromExpr (StgLet binding e) = error "StgLet"
+fromExpr (StgCase e _ _ _ _ _ (a:as)) = do
+  alts <- mapM fromAlt (as ++ [a]) -- we rotate a:as to make sure the wildcard case (if any) is the last one
+  node <- fromExpr e
+  mkCNode Nothing $ Case alts [node]
+fromExpr (StgLet binding body) = withBinding binding $ \vars -> fromExpr body
 fromExpr (StgLetNoEscape _ _ binding e) = fromExpr (StgLet binding e)
 
+fromVar v = do
+  let x = getName v
+  lookup <- lookupBind x
+  case lookup of
+    Just node -> return node
+    Nothing -> mkCNode Nothing $ ParamRef x
+
+fromAlt :: StgAlt -> FromSource s (Alt Name (CNode s Name))
+fromAlt (con, vars, _, e) = Alt [pat] <$> fromExpr e
+  where pat = case con of
+          DEFAULT -> PWildcard
+          LitAlt l -> PLit $ fromLit l
+          DataAlt c -> PConApp (getName c) $ map (PVar . getName) vars
+
 fromArg :: StgArg -> FromSource s (CNode s Name)
-fromArg (StgVarArg x) = error "StgVarArg"
+fromArg (StgVarArg v) = fromVar v
 fromArg (StgLitArg lit) = mkCNode Nothing $ Lit $ fromLit lit
 
 fromLit (MachInt n) = IntLit n
@@ -46,46 +80,20 @@ fromLit (MachWord64 n) = IntLit n
 fromLit (MachChar c) = CharLit c
 
 fromRhs (StgRhsCon _ con args) = fromExpr (StgConApp con args)
-fromRhs (StgRhsClosure _ _ _ update _ vars expr) = fromExpr expr -- TODO
+fromRhs (StgRhsClosure _ _ _ update _ vars expr) = mkCNode Nothing =<< (Lambda (map getName vars) <$> fromExpr expr)
 
-bindingList (StgNonRec name rhs) = [(name, rhs)]
-bindingList (StgRec binds) = binds
-
--- pprList ppr xs = brackets (hcat $ punctuate comma $ map ppr xs)
-
--- pprBind name rhs = text (show name) <+> text "=" <+> pprRhs rhs
-
--- pprBinding (StgNonRec name rhs) = pprBind name rhs
--- pprBinding (StgRec binds) = vcat $ map (uncurry pprBind) binds
-
--- pprRhs (StgRhsCon _ con args) = text "StgRhsCon"
--- pprRhs (StgRhsClosure _ _ occs update _ vars expr) = text "λ" <> pprUpdate update <+> pprList (text . show) vars <+> text "->" <+> pprExpr expr
+bindingList (StgNonRec name rhs) = [(getName name, rhs)]
+bindingList (StgRec binds) = map (\(name, rhs) -> (getName name, rhs)) binds
 
 -- pprUpdate ReEntrant = text "r"
 -- pprUpdate Updatable = text "u"
 -- pprUpdate SingleEntry = text "s"
 
--- pprAlt (con, vars, _, e) = pprAltCon con <+> pprList (text . show) vars <+> text "->" <+> pprExpr e
-
--- pprAltCon (DataAlt con) = text (show con)
-
--- pprArg (StgVarArg v) = text (show v)
--- pprArg (StgLitArg lit) = text "lit"
--- pprArg (StgTypeArg _) = text "type"
-
 instance (Show Name) where
   show = show . occNameString . nameOccName
 
-main :: IO ()
-main = do
-  stg <- toStg "../test/Hello.hs"
-  printDump $ pprStgBindingsWithSRTs stg    
-  
-  putStrLn $ unlines $ runST $ do
-    cnodes <- runVis $ liftM fst $ evalRWST `flip` Map.empty `flip` firstSerial $ do
-        let bindings = concatMap bindingList $ map fst stg
-        forM bindings $ \(x, rhs) -> do
-          fromRhs rhs                  
-    fnodes <- mapM flatten cnodes
-    return $ map show fnodes
-    
+fromBindings (b:bs) = withBinding b $ \vars -> do
+  y <- map fromJust <$> mapM lookupBind vars
+  ys <- fromBindings bs
+  return $ y:ys
+fromBindings [] = return []
