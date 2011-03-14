@@ -85,7 +85,6 @@ projectName name = (if isSymOcc occ then H.HsSymbol else H.HsIdent) $ occNameStr
 noLoc = H.SrcLoc "foo" 0 0 -- error "No location"
 
 projectPayload :: Payload Name (FNode Name) -> H.HsExp
-projectPayload (Knot node) = H.HsIrrPat $ paren $ projectNode node
 projectPayload (Lambda [] node) = projectNode node
 projectPayload (Lambda vars node) = H.HsLambda noLoc (map (H.HsPVar . projectName) vars) $ projectNode node
 projectPayload (ParamRef x) = H.HsVar $ H.UnQual $ projectName x

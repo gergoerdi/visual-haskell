@@ -38,9 +38,9 @@ lookupBind x = asks $ Map.lookup x
 
 -- setVar :: Name -> CNode s -> FromSTG s ()
 setVar x node = do
-  payload <- readPayload node
+  payload <- readThunk node
   node' <- fromJust <$> lookupBind x
-  writePayload node' payload
+  writeThunk node' payload
 
 fromExpr :: StgExpr -> FromSTG s (CNode s Name)
 fromExpr (StgSCC _ e) = fromExpr e
@@ -82,7 +82,10 @@ fromLit (MachWord64 n) = IntLit n
 fromLit (MachChar c) = CharLit c
 
 fromRhs (StgRhsCon _ con args) = fromExpr (StgConApp con args)
-fromRhs (StgRhsClosure _ _ _ update _ vars expr) = mkCNode Nothing =<< (Lambda (map getName vars) <$> fromExpr expr)
+fromRhs (StgRhsClosure _ _ _ update _ vars expr) = mk Nothing =<< (Lambda (map getName vars) <$> fromExpr expr)
+  where mk = case update of
+          ReEntrant -> mkCNodeReentrant
+          _ -> mkCNode
 
 bindingList (StgNonRec name rhs) = [(getName name, rhs)]
 bindingList (StgRec binds) = map (\(name, rhs) -> (getName name, rhs)) binds

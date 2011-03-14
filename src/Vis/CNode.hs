@@ -1,8 +1,8 @@
 {-# LANGUAGE DeriveFunctor, GeneralizedNewtypeDeriving, MultiParamTypeClasses, FunctionalDependencies, FlexibleInstances, UndecidableInstances #-}
-module Vis.CNode (CPayload, CNode(CKnot, cnodeSerial, cnodeName), 
+module Vis.CNode (CPayload, CNode(cnodeSerial, cnodeName), CThunk(..),
                   CNodeM, runCNodeM, 
-                  readPayload, writePayload, 
-                  MonadCNode(..), liftST, mkCNode, mkCNode_) 
+                  readThunk, writeThunk, 
+                  MonadCNode(..), liftST, mkCNode, mkCNode_, mkCNodeReentrant) 
        where
 
 import Vis.Node
@@ -19,9 +19,11 @@ type CPayload s name = Payload name (CNode s name)
 -- A node in the cyclic representation
 data CNode s name = CNode { cnodeSerial :: Serial, 
                             cnodeName :: Maybe name,
-                            cnodePayload :: STRef s (CPayload s name) }
-                  | CKnot (CNode s name)
+                            cnodeThunk :: STRef s (CThunk s name) }
                
+data CThunk s name = CUpdatable (CPayload s name)
+                   | CReentrant (CPayload s name)
+
 instance Eq (CNode s name) where
   (==) = (==) `on` cnodeSerial
 
@@ -35,11 +37,11 @@ newtype CNodeM s a = CNodeM { unCNodeM :: StateT [Serial] (ST s) a }
 runCNodeM :: CNodeM s a -> ST s a
 runCNodeM f = evalStateT (unCNodeM f) [firstSerial..]
 
-readPayload :: MonadCNode m s => CNode s name -> m (Payload name (CNode s name))
-readPayload = liftST . readSTRef . cnodePayload
+readThunk :: MonadCNode m s => CNode s name -> m (CThunk s name)
+readThunk = liftST . readSTRef . cnodeThunk
 
-writePayload :: MonadCNode m s => CNode s name -> Payload name (CNode s name) -> m ()
-writePayload node = liftST . writeSTRef (cnodePayload node)
+writeThunk :: MonadCNode m s => CNode s name -> (CThunk s name) -> m ()
+writeThunk node = liftST . writeSTRef (cnodeThunk node)
 
 class (Monad m) => MonadCNode m s | m -> s where
   liftCNode :: CNodeM s a -> m a  
@@ -53,14 +55,18 @@ instance (MonadTrans t, Monad (t m), Monad m, MonadCNode m s) => MonadCNode (t m
 liftST :: MonadCNode m s => ST s a -> m a  
 liftST = liftCNode . CNodeM . lift
 
-mkCNode :: MonadCNode m s => Maybe name -> Payload name (CNode s name) -> m (CNode s name)
-mkCNode name p = do
+mkCNodeI name thunk = do
   serial <- liftCNode nextSerial
-  payload <- liftST (newSTRef p)
+  payload <- liftST (newSTRef thunk)
   return $ CNode serial name payload
 
+mkCNode :: MonadCNode m s => Maybe name -> CPayload s name -> m (CNode s name)
+mkCNode name p = mkCNodeI name (CUpdatable p)
+
 mkCNode_ :: MonadCNode m s => Maybe name -> m (CNode s name)
-mkCNode_ name = mkCNode name $ error "Untied knot"
+mkCNode_ name = mkCNodeI name $ error "Untied knot"
+
+mkCNodeReentrant name p = mkCNodeI name (CReentrant p)  
 
 nextSerial :: CNodeM s Serial
 nextSerial = CNodeM (gets head <* modify tail)

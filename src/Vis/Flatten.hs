@@ -16,20 +16,21 @@ newtype SeenNodes = SeenNodes { unSeenNodes :: Map Serial Bool }
 sharedNodes :: CNode s name -> CNodeM s [Serial]
 sharedNodes node = map fst <$> filter snd <$> Map.toAscList <$> 
                      unSeenNodes <$> execStateT (collectNode node) (SeenNodes mempty)
-  where collectNode = collectNode' False
-                      
-        collectNode' force node = do
+  where collectNode node = do
           let serial = cnodeSerial node
           lookup <- gets $ Map.lookup serial . unSeenNodes 
           case lookup of
             Nothing -> do
+              thunk <- readThunk node
+              let (force, payload) = case thunk of
+                    CReentrant p -> (True, p)
+                    CUpdatable p -> (False, p)
               modify $ SeenNodes . Map.insert serial force . unSeenNodes
-              readPayload node >>= collectPayload
+              collectPayload payload
             Just False -> do
               modify $ SeenNodes . Map.insert serial True . unSeenNodes
             Just True -> return ()
         
-        collectPayload (Knot node) = collectNode' True node
         collectPayload (Lambda pat node) = collectNode node
         collectPayload (App e args) = collectNode e >> mapM_ collectNode args
         collectPayload (BuiltinFunApp _ args) = mapM_ collectNode args
@@ -81,10 +82,13 @@ flatten node = do
 
 flattenNode :: CNode s name -> ToSource s name (FNode name)
 flattenNode node = ensureVar node $ do
-  FNode <$> (readPayload node >>= flattenPayload)
+  FNode <$> (readThunk node >>= flattenThunk)
+  
+flattenThunk :: CThunk s name -> ToSource s name (FPayload name)
+flattenThunk (CReentrant payload) = flattenPayload payload
+flattenThunk (CUpdatable payload) = flattenPayload payload
   
 flattenPayload :: Payload name (CNode s name) -> ToSource s name (FPayload name)
-flattenPayload (Knot node) = Knot <$> flattenNode node
 flattenPayload (Lambda pat node) = Lambda pat <$> flattenNode node
 flattenPayload (App e args) = liftM2 App (flattenNode e) (mapM flattenNode args)
 flattenPayload (BuiltinFunApp op args) = liftM (BuiltinFunApp op) $ mapM flattenNode args

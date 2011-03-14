@@ -37,8 +37,7 @@ data BuiltinFun = IntPlus
                 | IntMinus
                 deriving Show
                
-data Payload name node = Knot node
-                       | Lambda [name] node
+data Payload name node = Lambda [name] node
                        | ParamRef name
                        | Lit Lit
                        | App node [node]
