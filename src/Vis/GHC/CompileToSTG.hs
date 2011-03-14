@@ -50,7 +50,7 @@ getModSummary hsc_env filename = do
     ms_srcimps = src_imps
     }
 
-parseAndTypecheck :: (GhcMonad m) => ModSummary -> m (TcGblEnv)
+parseAndTypecheck :: (GhcMonad m) => ModSummary -> m TcGblEnv
 parseAndTypecheck mod_summary = do 
   rdr_module <- hscParse mod_summary
   hscTypecheck mod_summary rdr_module

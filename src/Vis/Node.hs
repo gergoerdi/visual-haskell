@@ -20,7 +20,7 @@ data Pat name = PConApp name [Pat name]
                     
 data Lit = IntLit Integer                  
          | CharLit Char
-         deriving Show
+         deriving (Show, Eq)
                        
 data Bind name = Bind (FName name) (FNode name)
                deriving Show
@@ -29,7 +29,7 @@ data FName name = Generated Serial
                 | Given name
                 deriving Show
 
-data Alt name node = Alt { altPatterns :: [Pat name],
+data Alt name node = Alt { altPattern :: Pat name,
                            altBody :: node }
               deriving Show
                
@@ -42,8 +42,8 @@ data Payload name node = Knot node
                        | ParamRef name
                        | Lit Lit
                        | App node [node]
+                       | Case [Alt name node] node
                        | BuiltinFunApp BuiltinFun [node]
-                       | Case [Alt name node] [node]
                        | ConApp name [node]
                        deriving Show
                                 

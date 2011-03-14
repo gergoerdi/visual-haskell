@@ -9,6 +9,7 @@ import Vis.Node
 
 import Data.STRef
 import Data.Function (on)
+import Data.Ord (comparing)
 import Control.Applicative
 import Control.Monad.ST
 import Control.Monad.State
@@ -25,7 +26,7 @@ instance Eq (CNode s name) where
   (==) = (==) `on` cnodeSerial
 
 instance Ord (CNode s name) where
-  compare = compare `on` cnodeSerial
+  compare = comparing cnodeSerial
                      
 
 newtype CNodeM s a = CNodeM { unCNodeM :: StateT [Serial] (ST s) a }

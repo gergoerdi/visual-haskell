@@ -39,9 +39,7 @@ parenExpr (H.HsApp (H.HsApp op left) right) | Just opName <- getInfix = H.HsInfi
         
         left' = forceTopParen $ parenExpr left
         right' = forceTopParen $ parenExpr right          
-parenExpr (H.HsApp e f@(H.HsApp _ _)) = H.HsApp (parenExpr e) (paren (parenExpr f))
-parenExpr (H.HsApp e f@(H.HsLambda _ _ _)) = H.HsApp (parenExpr e) (paren (parenExpr f))
-parenExpr (H.HsApp e f) = H.HsApp (parenExpr e) (parenExpr f)
+parenExpr (H.HsApp e f) = H.HsApp (parenExpr e) (paren (parenExpr f))
 parenExpr (H.HsLambda loc pats body) = H.HsLambda loc pats $ parenExpr body
 parenExpr (H.HsLet decls body) = H.HsLet (map parenDecl decls) $ parenExpr body
 parenExpr (H.HsCase e alts) = H.HsCase (parenExpr e) (map parenAlt alts)
@@ -86,8 +84,6 @@ projectName name = (if isSymOcc occ then H.HsSymbol else H.HsIdent) $ occNameStr
 
 noLoc = H.SrcLoc "foo" 0 0 -- error "No location"
 
-ensureLen l es = es ++ replicate (l - length es) H.HsWildCard
-
 projectPayload :: Payload Name (FNode Name) -> H.HsExp
 projectPayload (Knot node) = H.HsIrrPat $ paren $ projectNode node
 projectPayload (Lambda [] node) = projectNode node
@@ -101,18 +97,8 @@ projectPayload (BuiltinFunApp op args) = toApp $ fun:(map projectNode args)
           IntMinus -> H.HsVar (H.UnQual $ H.HsSymbol "-#")
 projectPayload (ConApp c args) = toApp $ con:(map projectNode args)
   where con = H.HsCon $ H.UnQual $ projectName c
--- projectPayload (Case [Alt pats body] []) = paren $ H.HsLambda noLoc pats $ projectNode body
--- projectPayload (CaseApp 1 alts args) = H.HsCase expr $ map projectAlt alts
---   where expr = case args of 
---           [] -> H.HsWildCard
---           [arg] -> projectNode arg        
---         projectAlt (Alt [pat] node) = H.HsAlt noLoc pat (H.HsUnGuardedAlt $ projectNode node) []
-projectPayload (Case alts [arg]) = H.HsCase (projectNode arg) $ map projectAlt alts
-  where projectAlt (Alt [pat] node) = H.HsAlt noLoc (projectPat pat) (H.HsUnGuardedAlt $ projectNode node) []
-projectPayload (Case alts args) = H.HsCase expr $ map projectAlt alts
-  where expr = H.HsTuple $ map projectNode args
-        projectAlt (Alt pats node) = let body = projectNode node
-                                     in H.HsAlt noLoc (H.HsPTuple $ map projectPat pats) (H.HsUnGuardedAlt body) []
+projectPayload (Case alts arg) = H.HsCase (projectNode arg) $ map projectAlt alts
+  where projectAlt (Alt pat node) = H.HsAlt noLoc (projectPat pat) (H.HsUnGuardedAlt $ projectNode node) []
 
 projectPat :: Pat Name -> H.HsPat
 projectPat (PVar x) = H.HsPVar $ projectName x

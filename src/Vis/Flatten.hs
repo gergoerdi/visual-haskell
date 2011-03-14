@@ -34,7 +34,7 @@ sharedNodes node = map fst <$> filter snd <$> Map.toAscList <$>
         collectPayload (App e args) = collectNode e >> mapM_ collectNode args
         collectPayload (BuiltinFunApp _ args) = mapM_ collectNode args
         collectPayload (ConApp _ args) = mapM_ collectNode args
-        collectPayload (Case alts args) = mapM_ collectAlt alts >> mapM_ collectNode args        
+        collectPayload (Case alts arg) = mapM_ collectAlt alts >> collectNode arg
         collectPayload _ = return ()
         
         collectAlt (Alt _ body) = collectNode body
@@ -89,7 +89,7 @@ flattenPayload (Lambda pat node) = Lambda pat <$> flattenNode node
 flattenPayload (App e args) = liftM2 App (flattenNode e) (mapM flattenNode args)
 flattenPayload (BuiltinFunApp op args) = liftM (BuiltinFunApp op) $ mapM flattenNode args
 flattenPayload (ConApp c args) = liftM (ConApp c) $ mapM flattenNode args
-flattenPayload (Case alts args) = liftM2 Case (mapM flattenAlt alts) (mapM flattenNode args)
+flattenPayload (Case alts arg) = liftM2 Case (mapM flattenAlt alts) (flattenNode arg)
   where flattenAlt (Alt pats node) = liftM (Alt pats) $ flattenNode node
 flattenPayload (ParamRef x) = return $ ParamRef x
 flattenPayload (Lit l) = return $ Lit l

@@ -53,7 +53,7 @@ fromExpr (StgOpApp op args _) = error "TODO: StgOpApp"
 fromExpr (StgCase e _ _ _ _ _ (a:as)) = do
   alts <- mapM fromAlt (as ++ [a]) -- we rotate a:as to make sure the wildcard case (if any) is the last one
   node <- fromExpr e
-  mkCNode Nothing $ Case alts [node]
+  mkCNode Nothing $ Case alts node
 fromExpr (StgLet binding body) = withBinding binding $ \vars -> fromExpr body
 fromExpr (StgLetNoEscape _ _ binding e) = fromExpr (StgLet binding e)
 
@@ -65,7 +65,7 @@ fromVar v = do
     Nothing -> mkCNode Nothing $ ParamRef x
 
 fromAlt :: StgAlt -> FromSTG s (Alt Name (CNode s Name))
-fromAlt (con, vars, _, e) = Alt [pat] <$> fromExpr e
+fromAlt (con, vars, _, e) = Alt pat <$> fromExpr e
   where pat = case con of
           DEFAULT -> PWildcard
           LitAlt l -> PLit $ fromLit l

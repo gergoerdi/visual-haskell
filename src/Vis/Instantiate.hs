@@ -5,7 +5,6 @@ import Vis.Node
 import Vis.CNode
 
 import Control.Applicative
-import Data.STRef
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Control.Monad.RWS
@@ -56,12 +55,12 @@ clonePayload (Lambda pat node) = Lambda pat <$> cloneNode node
 clonePayload (Lit n) = return $ Lit n
 clonePayload (App e args) = App <$> cloneNode e <*> mapM cloneNode args
 clonePayload (BuiltinFunApp f args) = BuiltinFunApp f <$> mapM cloneNode args
-clonePayload (Case alts args) = Case <$> mapM cloneAlt alts <*> mapM cloneNode args
+clonePayload (Case alts arg) = Case <$> mapM cloneAlt alts <*> cloneNode arg
 clonePayload (ConApp c args) = ConApp c <$> mapM cloneNode args
 clonePayload (ParamRef x) = return $ ParamRef x
 
-cloneAlt (Alt pats body) = Alt pats <$> withoutVars vars (cloneNode body)
-  where vars = execWriter $ mapM_ varsOf pats
+cloneAlt (Alt pat body) = Alt pat <$> withoutVars vars (cloneNode body)
+  where vars = execWriter $ varsOf pat
         varsOf (PConApp _ pats) = mapM_ varsOf pats
         varsOf (PVar x) = tell [x]
         varsOf (PAsPat x pat) = tell [x] >> varsOf pat
