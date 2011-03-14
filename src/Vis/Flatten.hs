@@ -22,11 +22,8 @@ sharedNodes node = map fst <$> filter snd <$> Map.toAscList <$>
           case lookup of
             Nothing -> do
               thunk <- readThunk node
-              let (force, payload) = case thunk of
-                    CReentrant p -> (True, p)
-                    CUpdatable p -> (False, p)
-              modify $ SeenNodes . Map.insert serial force . unSeenNodes
-              collectPayload payload
+              modify $ SeenNodes . Map.insert serial (cthunkReentrant thunk) . unSeenNodes
+              collectPayload $ cthunkPayload thunk
             Just False -> do
               modify $ SeenNodes . Map.insert serial True . unSeenNodes
             Just True -> return ()
@@ -85,8 +82,7 @@ flattenNode node = ensureVar node $ do
   FNode <$> (readThunk node >>= flattenThunk)
   
 flattenThunk :: CThunk s name -> ToSource s name (FPayload name)
-flattenThunk (CReentrant payload) = flattenPayload payload
-flattenThunk (CUpdatable payload) = flattenPayload payload
+flattenThunk = flattenPayload . cthunkPayload
   
 flattenPayload :: Payload name (CNode s name) -> ToSource s name (FPayload name)
 flattenPayload (Lambda pat node) = Lambda pat <$> flattenNode node

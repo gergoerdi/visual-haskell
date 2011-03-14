@@ -2,7 +2,7 @@
 module Vis.CNode (CPayload, CNode(cnodeSerial, cnodeName), CThunk(..),
                   CNodeM, runCNodeM, 
                   readThunk, writeThunk, 
-                  MonadCNode(..), liftST, mkCNode, mkCNode_, mkCNodeReentrant) 
+                  MonadCNode(..), liftST, mkCNode, mkCNode_) 
        where
 
 import Vis.Node
@@ -21,8 +21,8 @@ data CNode s name = CNode { cnodeSerial :: Serial,
                             cnodeName :: Maybe name,
                             cnodeThunk :: STRef s (CThunk s name) }
                
-data CThunk s name = CUpdatable (CPayload s name)
-                   | CReentrant (CPayload s name)
+data CThunk s name = CThunk { cthunkReentrant :: Bool,
+                              cthunkPayload :: CPayload s name }
 
 instance Eq (CNode s name) where
   (==) = (==) `on` cnodeSerial
@@ -60,13 +60,11 @@ mkCNodeI name thunk = do
   payload <- liftST (newSTRef thunk)
   return $ CNode serial name payload
 
-mkCNode :: MonadCNode m s => Maybe name -> CPayload s name -> m (CNode s name)
-mkCNode name p = mkCNodeI name (CUpdatable p)
+mkCNode :: MonadCNode m s => Maybe name -> Bool -> CPayload s name -> m (CNode s name)
+mkCNode name reentrant p = mkCNodeI name (CThunk reentrant p)
 
 mkCNode_ :: MonadCNode m s => Maybe name -> m (CNode s name)
 mkCNode_ name = mkCNodeI name $ error "Untied knot"
-
-mkCNodeReentrant name p = mkCNodeI name (CReentrant p)  
 
 nextSerial :: CNodeM s Serial
 nextSerial = CNodeM (gets head <* modify tail)

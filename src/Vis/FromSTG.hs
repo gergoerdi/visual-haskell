@@ -25,14 +25,15 @@ withVars vars f = do
     return (var, node)
   local (Map.union `flip` Map.fromList newBinds) f
 
+withBindings :: [(Name, StgRhs)] -> FromSTG s a -> FromSTG s a
+withBindings bindings f = withVars (map fst bindings) $ do
+  forM_ bindings $ \(var, rhs) -> setVar var =<< fromRhs rhs
+  f
+
 withBinding :: StgBinding -> ([Name] -> FromSTG s a) -> FromSTG s a
-withBinding binding f = do
-  let bindings = bindingList binding
-  let vars = map fst bindings
-  withVars vars $ do
-    forM_ bindings $ \(var, rhs) -> do
-      setVar var =<< fromRhs rhs
-    f vars
+withBinding binding f = let bindings = bindingList binding
+                            vars = map fst bindings
+                        in withBindings bindings $ f vars
     
 lookupBind x = asks $ Map.lookup x
 
@@ -45,15 +46,15 @@ setVar x node = do
 fromExpr :: StgExpr -> FromSTG s (CNode s Name)
 fromExpr (StgSCC _ e) = fromExpr e
 fromExpr (StgTick _ _ e) = fromExpr e
-fromExpr (StgLit lit) = mkCNode Nothing $ Lit $ fromLit lit
+fromExpr (StgLit lit) = mkCNode Nothing False $ Lit $ fromLit lit
 fromExpr (StgLam _ vars body) = error "TODO: StgLam"
-fromExpr (StgApp f args) = mkCNode Nothing =<< App <$> fromVar f <*> mapM fromArg args
-fromExpr (StgConApp con args) = mkCNode Nothing =<< (ConApp (dataConName con) <$> mapM fromArg args)
+fromExpr (StgApp f args) = mkCNode Nothing False =<< App <$> fromVar f <*> mapM fromArg args
+fromExpr (StgConApp con args) = mkCNode Nothing False =<< (ConApp (dataConName con) <$> mapM fromArg args)
 fromExpr (StgOpApp op args _) = error "TODO: StgOpApp"
 fromExpr (StgCase e _ _ _ _ _ (a:as)) = do
   alts <- mapM fromAlt (as ++ [a]) -- we rotate a:as to make sure the wildcard case (if any) is the last one
   node <- fromExpr e
-  mkCNode Nothing $ Case alts node
+  mkCNode Nothing False $ Case alts node
 fromExpr (StgLet binding body) = withBinding binding $ \vars -> fromExpr body
 fromExpr (StgLetNoEscape _ _ binding e) = fromExpr (StgLet binding e)
 
@@ -62,7 +63,9 @@ fromVar v = do
   lookup <- lookupBind x
   case lookup of
     Just node -> return node
-    Nothing -> mkCNode Nothing $ ParamRef x
+    Nothing -> mkCNode Nothing False $ ParamRef x
+  
+  where x = getName v
 
 fromAlt :: StgAlt -> FromSTG s (Alt Name (CNode s Name))
 fromAlt (con, vars, _, e) = Alt pat <$> fromExpr e
@@ -73,7 +76,7 @@ fromAlt (con, vars, _, e) = Alt pat <$> fromExpr e
 
 fromArg :: StgArg -> FromSTG s (CNode s Name)
 fromArg (StgVarArg v) = fromVar v
-fromArg (StgLitArg lit) = mkCNode Nothing $ Lit $ fromLit lit
+fromArg (StgLitArg lit) = mkCNode Nothing False $ Lit $ fromLit lit
 
 fromLit (MachInt n) = IntLit n
 fromLit (MachInt64 n) = IntLit n
@@ -82,10 +85,11 @@ fromLit (MachWord64 n) = IntLit n
 fromLit (MachChar c) = CharLit c
 
 fromRhs (StgRhsCon _ con args) = fromExpr (StgConApp con args)
-fromRhs (StgRhsClosure _ _ _ update _ vars expr) = mk Nothing =<< (Lambda (map getName vars) <$> fromExpr expr)
-  where mk = case update of
-          ReEntrant -> mkCNodeReentrant
-          _ -> mkCNode
+fromRhs (StgRhsClosure _ _ _ update _ vars expr) = 
+  mkCNode Nothing reentrant =<< (Lambda (map getName vars) <$> fromExpr expr)
+  where reentrant = case update of
+          ReEntrant -> True
+          _ -> False
 
 bindingList (StgNonRec name rhs) = [(getName name, rhs)]
 bindingList (StgRec binds) = map (\(name, rhs) -> (getName name, rhs)) binds
@@ -97,8 +101,8 @@ bindingList (StgRec binds) = map (\(name, rhs) -> (getName name, rhs)) binds
 instance (Show Name) where
   show = show . occNameString . nameOccName
 
-fromBindings (b:bs) = withBinding b $ \vars -> do
-  y <- map fromJust <$> mapM lookupBind vars
-  ys <- fromBindings bs
-  return $ y:ys
-fromBindings [] = return []
+fromBindings :: [StgBinding] -> FromSTG s [CNode s Name]
+fromBindings bs = do
+  let bindings = concatMap bindingList bs
+      vars = map fst bindings
+  withBindings bindings $ mapM (liftM fromJust . lookupBind) vars
