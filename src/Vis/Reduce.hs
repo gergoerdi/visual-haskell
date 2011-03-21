@@ -19,7 +19,7 @@ reduceBuiltinBinaryInt op node left right = do
   writePayload node $ Lit $ IntLit $ n `op` m
   return True  
 
-reduceBuiltin :: (Ord name, Show name) => BuiltinFun -> CNode s name -> [CNode s name] -> CNodeM s Bool
+reduceBuiltin :: (Ord name) => BuiltinFun -> CNode s name -> [CNode s name] -> CNodeM s Bool
 reduceBuiltin IntPlus node [left, right] = reduceBuiltinBinaryInt (+) node left right
 reduceBuiltin IntMinus node [left, right] = reduceBuiltinBinaryInt (-) node left right
 reduceBuiltin _ _ _ = return False
@@ -27,13 +27,13 @@ reduceBuiltin _ _ _ = return False
 readPayload node = cthunkPayload <$> readThunk node
 writePayload node = writeThunk node . CThunk False
                       
-reduceWHNF :: (Ord name, Show name) => CNode s name -> CNodeM s (CPayload s name)
+reduceWHNF :: (Ord name) => CNode s name -> CNodeM s (CPayload s name)
 reduceWHNF node = do
   changed <- reduceStep node
   if changed then reduceWHNF node else readPayload node
   
     
-reduceStep :: (Ord name, Show name) => CNode s name -> CNodeM s Bool
+reduceStep :: (Ord name) => CNode s name -> CNodeM s Bool
 reduceStep node = do
   payload <- readPayload node
   case payload of    
@@ -46,7 +46,7 @@ reduceStep node = do
           let formalMap = Map.fromList $ zip vars args
           overwriteWith =<< instantiate formalMap body
       return True
-    ParamRef x -> fail $ unwords ["Unfilled parameter:", show x]
+    ParamRef x -> fail "Unfilled parameter"
     BuiltinFunApp op args -> reduceBuiltin op node args
     Case alts arg -> do
       node' <- applyCase alts arg
@@ -62,14 +62,14 @@ reduceStep node = do
     
   where overwriteWith node' = writePayload node =<< readPayload node'
 
-applyCase :: (Ord name, Show name) => [Alt name (CNode s name)] -> CNode s name -> CNodeM s (Maybe (CNode s name))
+applyCase :: (Ord name) => [Alt name (CNode s name)] -> CNode s name -> CNodeM s (Maybe (CNode s name))
 applyCase alts arg = do
   match <- firstMatch alts arg
   case match of
     Nothing -> return Nothing
     Just (formalMap, body) -> Just <$> instantiate formalMap body
 
-firstMatch :: (Ord name, Show name) => [Alt name (CNode s name)] -> CNode s name -> CNodeM s (Maybe (FormalMap s name, CNode s name))
+firstMatch :: (Ord name) => [Alt name (CNode s name)] -> CNode s name -> CNodeM s (Maybe (FormalMap s name, CNode s name))
 firstMatch alts arg = do
   getFirst <$> mconcat <$> 
     (forM alts $ \ (Alt pat body) -> do              
@@ -78,9 +78,9 @@ firstMatch alts arg = do
           Nothing -> return $ First $ Nothing
           Just formalMap -> return $ First $ Just (formalMap, body))  
 
-match :: (Ord name, Show name) => Pat name -> CNode s name -> CNodeM s (Maybe (FormalMap s name))
+match :: (Ord name) => Pat name -> CNode s name -> CNodeM s (Maybe (FormalMap s name))
 match pat arg = fmap (Map.fromList) <$> (runMaybeT $ execWriterT $ collect pat arg)
-  where collect :: (Ord name, Show name) => Pat name -> CNode s name -> WriterT [(name, CNode s name)] (MaybeT (CNodeM s)) ()
+  where collect :: (Ord name) => Pat name -> CNode s name -> WriterT [(name, CNode s name)] (MaybeT (CNodeM s)) ()
         collect PWildcard node = return ()
         collect (PVar x) node = tell $ [(x, node)]
         collect (PLit lit) node = do

@@ -22,7 +22,7 @@ sharedNodes node = map fst <$> filter snd <$> Map.toAscList <$>
           case lookup of
             Nothing -> do
               thunk <- readThunk node
-              modify $ SeenNodes . Map.insert serial (cthunkReentrant thunk) . unSeenNodes
+              modify $ SeenNodes . Map.insert serial (False && cthunkReentrant thunk) . unSeenNodes
               collectPayload $ cthunkPayload thunk
             Just False -> do
               modify $ SeenNodes . Map.insert serial True . unSeenNodes

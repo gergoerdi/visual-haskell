@@ -23,12 +23,12 @@ import Debug.Trace
 
 main :: IO ()
 main = do
-  stg <- toStg "../test/Hello.hs"
-  printDump $ pprStgBindingsWithSRTs stg    
+  stgs <- toStg "../test/Hello.hs"
+  mapM_ (printDump . pprStgBindingsWithSRTs) stgs
   
   putStrLn $ unlines $ runST $ do
     fnodes <- runCNodeM $ do
-      cnodes <- runFromSTG (fromBindings (map fst stg))
+      cnodes <- runFromSTG (fromSTG (concatMap (map fst) stgs))
       let (Just cnode) = find isMain cnodes
       replicateM steps $ do
         result <- flatten cnode        
@@ -38,5 +38,5 @@ main = do
     -- return $ map show fnodes
     return $ map (prettyPrint . toSource) fnodes
     -- return $ map show fnodes
-  where steps = 3
+  where steps = 1
         isMain cnode = fmap (occNameString . nameOccName) (cnodeName cnode) == Just "main"

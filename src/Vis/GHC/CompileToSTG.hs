@@ -1,5 +1,6 @@
-module Vis.GHC.CompileToSTG (toStg) where
+module Vis.GHC.CompileToSTG (toStg, Stg) where
 
+import GHC
 import HscTypes
 import HscMain
 import SrcLoc
@@ -19,12 +20,8 @@ import Var (Id)
 import StgSyn (GenStgBinding)
 import TcRnTypes (TcGblEnv)
 
--- Only for main
-import Outputable (printDump)
-import StgSyn (pprStgBindingsWithSRTs)
-
-getModSummary :: (GhcMonad m) => HscEnv -> FilePath -> m ModSummary
-getModSummary hsc_env filename = do
+getModSummary' :: (GhcMonad m) => HscEnv -> FilePath -> m ModSummary
+getModSummary' hsc_env filename = do
   let dflags = hsc_dflags hsc_env
       
   buf <- liftIO $ hGetStringBuffer filename
@@ -75,16 +72,15 @@ compileToStg hsc_env mod_summary = do
     (stg_binds', _ccs) <- stg2stg dflags this_mod stg_binds
     return stg_binds'
   
-toStg :: FilePath -> IO (Stg Id)
+toStg :: FilePath -> IO [Stg Id]
 toStg filename = runGhc (Just libdir) $ do
   dflags <- getSessionDynFlags
   _ <- setSessionDynFlags dflags
 
-  withSession $ \hsc_env -> do
-    mod_sum <- getModSummary hsc_env filename
-    compileToStg hsc_env mod_sum
-    
-main :: IO ()
-main = do
-  stg <- toStg "../test/Hello.hs"
-  printDump $ pprStgBindingsWithSRTs stg
+  target <- guessTarget filename Nothing
+  setTargets [target]
+  _ <- load LoadAllTargets
+  mods <- depanal [] False
+
+  withSession $ \hsc_env ->
+    mapM (compileToStg hsc_env) mods

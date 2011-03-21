@@ -48,7 +48,7 @@ cloneNode node = do
           case cloned of 
             Just node' -> return node'
             Nothing -> do
-              node' <- lift $ mkCNode_ $ Nothing -- cnodeName node
+              node' <- lift $ mkCNode_ $ (if cthunkReentrant thunk then Nothing else cnodeName node)
               modify (Map.insert node node')              
               payload' <- clonePayload (cthunkPayload thunk)
               lift $ writeThunk node' $ CThunk False payload'

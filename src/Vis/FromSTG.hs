@@ -59,12 +59,10 @@ fromExpr (StgLet binding body) = withBinding binding $ \vars -> fromExpr body
 fromExpr (StgLetNoEscape _ _ binding e) = fromExpr (StgLet binding e)
 
 fromVar v = do
-  let x = getName v
   lookup <- lookupBind x
   case lookup of
     Just node -> return node
-    Nothing -> mkCNode Nothing False $ ParamRef x
-  
+    Nothing -> mkCNode Nothing False $ ParamRef x  
   where x = getName v
 
 fromAlt :: StgAlt -> FromSTG s (Alt Name (CNode s Name))
@@ -94,15 +92,8 @@ fromRhs (StgRhsClosure _ _ _ update _ vars expr) =
 bindingList (StgNonRec name rhs) = [(getName name, rhs)]
 bindingList (StgRec binds) = map (\(name, rhs) -> (getName name, rhs)) binds
 
--- pprUpdate ReEntrant = text "r"
--- pprUpdate Updatable = text "u"
--- pprUpdate SingleEntry = text "s"
-
 instance (Show Name) where
   show = show . occNameString . nameOccName
 
-fromBindings :: [StgBinding] -> FromSTG s [CNode s Name]
-fromBindings bs = do
-  let bindings = concatMap bindingList bs
-      vars = map fst bindings
-  withBindings bindings $ mapM (liftM fromJust . lookupBind) vars
+fromSTG :: [StgBinding] -> FromSTG s [CNode s Name]
+fromSTG bs = withBindings (concatMap bindingList bs) $ asks (map snd . Map.toList)
