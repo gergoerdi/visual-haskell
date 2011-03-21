@@ -4,7 +4,7 @@ import Vis.GHC.CompileToSTG
 import Vis.GHC.SimpleSTG
 
 import Outputable (printDump)
-import StgSyn (pprStgBindingsWithSRTs)
+import StgSyn (pprStgBindings)
 import System.Environment (getArgs)
 import Control.Monad
 
@@ -15,7 +15,7 @@ main = do
   (file:_) <- getArgs
   stgs <- toStg file
   forM_ stgs $ \stg -> do
-    printDump $ pprStgBindingsWithSRTs stg
+    printDump $ pprStgBindings $ map fst stg
     mapM_ print $ map (simplifyBinding . fst) stg
 
 instance (Show Name) where

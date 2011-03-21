@@ -1,3 +1,4 @@
+{-# LANGUAGE StandaloneDeriving #-}
 module Vis.GHC.SimpleSTG where
 
 import StgSyn
@@ -7,6 +8,11 @@ import Name
 import Literal
 import Type
 
+import PrimOp
+import ForeignCall
+
+import GHC.Show
+
 import Control.Arrow
 -- import Control.Applicative
 -- import Control.Monad.Reader
@@ -15,10 +21,24 @@ import Control.Arrow
 -- import Data.Maybe
 import Debug.Trace
 
+deriving instance Show PrimCall
+deriving instance Show ForeignCall
+deriving instance Show CCallSpec
+deriving instance Show CCallTarget
+deriving instance Show CCallConv
+
+instance (Show StgOp) where
+  showsPrec n (StgPrimOp op) = showParen (n > appPrec) $ showString $ 
+                                 unwords ["StgPrimOp", show op]
+  showsPrec n (StgPrimCallOp pcall) = showParen (n > appPrec) $ showString $ 
+                                        unwords ["StgPrimCallOp", show pcall]
+  showsPrec n (StgFCallOp fcall _) = showParen (n > appPrec) $ showString $ 
+                                       unwords ["StgFCallOp", show fcall]
+                                       
 data SStgExpr id = SStgApp id [SStgArg id]
                  | SStgLit Literal
                  | SStgConApp id [SStgArg id]
-                 -- | SStgOpApp StgOp [SStgArg id] Type -- TODO: GenStgOpApp
+                 | SStgOpApp StgOp [SStgArg id]
                  | SStgLam [id] (SStgExpr id)
                  | SStgCase (SStgExpr id) [SStgAlt id]
                  | SStgLet [SStgBinding id] (SStgExpr id)
@@ -67,7 +87,7 @@ simplifyExpr :: StgExpr -> SStgExpr Name
 simplifyExpr (StgApp f args) = SStgApp (getName f) $ map simplifyArg args
 simplifyExpr (StgLit lit) = SStgLit lit
 simplifyExpr (StgConApp con args) = SStgConApp (getName con) $ map simplifyArg args
-simplifyExpr (StgOpApp op args _) = error "TODO: StgOpApp"
+simplifyExpr (StgOpApp op args _) = SStgOpApp op $ map simplifyArg args
 simplifyExpr (StgLam _ xs body) = SStgLam (map getName xs) $ simplifyExpr body
 simplifyExpr (StgCase e _ _ _ _ _ alts) = SStgCase (simplifyExpr e) $ map simplifyAlt alts
 simplifyExpr (StgLet binding body) = SStgLet (simplifyBinding binding) $ simplifyExpr body
