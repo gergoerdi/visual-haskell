@@ -1,4 +1,4 @@
-module Vis.GHC.SimpleSTG where
+module Vis.SSTG.SimpleSTG where
 
 import StgSyn
 import CoreSyn (AltCon(..))
