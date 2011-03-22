@@ -1,22 +1,44 @@
-module Main where
+-- module Main where
 
 import Vis.GHC.CompileToSTG
 import Vis.GHC.SimpleSTG
 
-import Outputable (printDump)
+import Outputable
 import StgSyn (pprStgBindings)
+import HscTypes
+import Module
+import Binary
+
+import IO
 import System.Environment (getArgs)
 import Control.Monad
+import System.FilePath (replaceExtension)
+import System.Directory (canonicalizePath)
 
-import Name
+import Data.Word
+
+withOpenFile fn mode f = do
+  h <- liftIO $ openFile fn mode
+  f h
+  liftIO $ hClose h
 
 main :: IO ()
 main = do    
-  (file:_) <- getArgs
-  stgs <- toStg file
-  forM_ stgs $ \stg -> do
-    printDump $ pprStgBindings $ map fst stg
-    mapM_ print $ map (simplifyBinding . fst) stg
+  args <- getArgs
+  stgs <- toStg args
+  forM_ stgs $ \(mod, stg) -> do
+    withWrite (modFile mod "stg") $ \h -> do
+      let fnSrc = ml_hs_file . ms_location $ mod
+      case fnSrc of        
+        Just fnSrc -> do
+          fnSrc' <- canonicalizePath fnSrc
+          hPutStrLn h $ unwords ["--", "Compiled from", fnSrc']
+        Nothing -> return ()
+      printForUser h neverQualify $ pprStgBindings $ map fst stg
+    
+    withWrite (modFile mod "stgb") $ \h -> do      
+      bh <- openBinIO h      
+      mapM_ (put_ bh) $ map (simplifyBinding . fst) stg
 
-instance (Show Name) where
-  show name = show (occNameString $ nameOccName name) ++ show (nameUnique name)
+  where modFile mod ext = replaceExtension (ml_hi_file . ms_location $ mod) ('.':ext)
+        withWrite fn f = (putStrLn $ unwords ["Creating", fn]) >> (withOpenFile fn WriteMode f)

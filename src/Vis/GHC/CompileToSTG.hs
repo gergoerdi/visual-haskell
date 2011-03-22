@@ -10,7 +10,6 @@ import Module
 import StringBuffer
 import System.Directory
 import GHC.Paths (libdir)
-import GHC (runGhc, getSessionDynFlags, setSessionDynFlags)
 import DynFlags (thisPackage)
 import CorePrep (corePrepPgm)
 import TyCon (isDataTyCon)
@@ -20,7 +19,7 @@ import Var (Id)
 import StgSyn (GenStgBinding)
 import TcRnTypes (TcGblEnv)
 
-import System.Environment (getArgs)
+import Control.Monad
 
 parseAndTypecheck :: (GhcMonad m) => ModSummary -> m DesugaredModule
 parseAndTypecheck mod = parseModule mod >>= typecheckModule >>= desugarModule
@@ -45,9 +44,8 @@ compileToStg mod = do
     (stg_binds', _ccs) <- stg2stg dflags this_mod stg_binds
     return stg_binds'
   
-toStg :: FilePath -> IO [Stg Id]
-toStg filename = runGhc (Just libdir) $ do
-  args <- liftIO getArgs
+toStg :: [String] -> IO [(ModSummary, Stg Id)]
+toStg args = runGhc (Just libdir) $ do
   dflags <- getSessionDynFlags
   (dflags', lfilenames, _) <- parseDynamicFlags dflags (map noLoc args)
   let filenames = map unLoc lfilenames
@@ -57,4 +55,6 @@ toStg filename = runGhc (Just libdir) $ do
   setTargets targets
   _ <- load LoadAllTargets
   mods <- depanal [] False
-  mapM compileToStg mods
+  forM mods $ \mod -> do
+    stg <- compileToStg mod
+    return $ (mod, stg)

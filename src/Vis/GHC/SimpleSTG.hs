@@ -1,39 +1,11 @@
-{-# LANGUAGE StandaloneDeriving #-}
 module Vis.GHC.SimpleSTG where
 
 import StgSyn
 import CoreSyn (AltCon(..))
-import DataCon
 import Name
 import Literal
-import Type
-
-import PrimOp
-import ForeignCall
-
-import GHC.Show
 
 import Control.Arrow
--- import Control.Applicative
--- import Control.Monad.Reader
--- import Data.Map (Map)
--- import qualified Data.Map as Map
--- import Data.Maybe
-import Debug.Trace
-
-deriving instance Show PrimCall
-deriving instance Show ForeignCall
-deriving instance Show CCallSpec
-deriving instance Show CCallTarget
-deriving instance Show CCallConv
-
-instance (Show StgOp) where
-  showsPrec n (StgPrimOp op) = showParen (n > appPrec) $ showString $ 
-                                 unwords ["StgPrimOp", show op]
-  showsPrec n (StgPrimCallOp pcall) = showParen (n > appPrec) $ showString $ 
-                                        unwords ["StgPrimCallOp", show pcall]
-  showsPrec n (StgFCallOp fcall _) = showParen (n > appPrec) $ showString $ 
-                                       unwords ["StgFCallOp", show fcall]
                                        
 data SStgExpr id = SStgApp id [SStgArg id]
                  | SStgLit Literal
@@ -42,30 +14,23 @@ data SStgExpr id = SStgApp id [SStgArg id]
                  | SStgLam [id] (SStgExpr id)
                  | SStgCase (SStgExpr id) [SStgAlt id]
                  | SStgLet [SStgBinding id] (SStgExpr id)
-                 deriving Show
                            
 data SStgArg id = SStgArgVar id
                 | SStgArgLit Literal
-                  -- | SStgArgType Type -- TODO: Type?
-                deriving Show
+                -- | SStgArgType Type -- TODO: Type?
 
 data SStgAlt id = SStgAlt (SStgAltCon id) (SStgExpr id)
-                deriving Show
                           
 data SStgAltCon id = SStgAltData id [id]
                    | SStgAltLit Literal
                    | SStgAltWildcard
-                   deriving Show
                       
 data SStgBinding id = SStgBinding id (SStgRhs id)
-                    deriving Show
                               
 data SStgRhs id = SStgRhsCon id [SStgArg id]
                 | SStgRhsClosure SUpdateFlag [id] (SStgExpr id)
-                deriving Show
                           
 data SUpdateFlag = SUpdatable | SReEntrant                          
-                 deriving Show
 
 simplifyBinding :: StgBinding  -> [SStgBinding Name]
 simplifyBinding (StgNonRec x body) = [SStgBinding (getName x) (simplifyRhs body)]
