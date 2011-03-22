@@ -20,6 +20,8 @@ import StgSyn (GenStgBinding)
 import TcRnTypes (TcGblEnv)
 
 import Control.Monad
+import Data.Maybe
+import Control.Applicative
 
 parseAndTypecheck :: (GhcMonad m) => ModSummary -> m DesugaredModule
 parseAndTypecheck mod = parseModule mod >>= typecheckModule >>= desugarModule
@@ -55,6 +57,15 @@ toStg args = runGhc (Just libdir) $ do
   setTargets targets
   _ <- load LoadAllTargets
   mods <- depanal [] False
-  forM mods $ \mod -> do
-    stg <- compileToStg mod
-    return $ (mod, stg)
+  result <- forM mods $ \mod -> do
+    let name = moduleNameString . moduleName . ms_mod $ mod
+    case ms_hsc_src mod of 
+      HsBootFile -> do
+        liftIO $ putStrLn . unwords $ ["Skipping", name] 
+        return Nothing
+      _ -> do 
+        liftIO $ putStrLn . unwords $ ["Compiling", name]
+        stg <- compileToStg mod
+        return $ Just (mod, stg)
+        
+  return $ catMaybes result

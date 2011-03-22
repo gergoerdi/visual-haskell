@@ -9,21 +9,11 @@ import Outputable
 import StgSyn (pprStgBindings)
 import HscTypes
 import Module
-import Binary
-import Name
-import UniqFM
-import FastMutInt
-import Unique
 
-import Data.Array
-import Data.IORef
 import IO
 import System.Environment (getArgs)
 import Control.Monad
-import System.FilePath (replaceExtension)
 import System.Directory (canonicalizePath)
-import Data.Word
-import Control.Arrow
 
 writeStg mod stg = withOutput (fileName mod "stg") $ \h -> do
     let fnSrc = ml_hs_file . ms_location $ mod
