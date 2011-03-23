@@ -1,6 +1,5 @@
 module Vis.SSTG.Serialization (writeStgb, readStgb) where
 
-import Vis.GHC.CompileToSTG
 import Vis.SSTG.SimpleSTG
 import Vis.IOUtils
 
@@ -28,7 +27,7 @@ import Data.Word
 import Control.Arrow
 
 -- Based on GHC's BinIface
-writeStgb fn stg = do
+writeStgb fn sstgs = do
   bh <- openBinMem initBinMemSize       
        
   -- Remember where the dictionary pointer will go
@@ -44,7 +43,7 @@ writeStgb fn stg = do
   ud <- newWriteState (putSymbol nameDict) (putSymbol fsDict)
   bh <- return $ setUserData bh ud
             
-  put_ bh $ concatMap (simplifyBinding . fst) stg
+  put_ bh sstgs
       
   -- Write the symtab pointer at the front of the file
   nameDict_p <- tellBin bh	        -- This is where the symtab will start
@@ -144,21 +143,21 @@ getSymbolTable bh update_namecache = do
   sz <- get bh
   od_names <- sequence (replicate sz (get bh))
   update_namecache $ \namecache -> 
-    let (namecache', names) = mapAccumR (fromOnDiskName arr) namecache od_names
+    let (namecache', names) = mapAccumR fromOnDiskName namecache od_names
         arr = listArray (0, sz-1) names 
     in (namecache', arr)
 
 type OnDiskName = (Maybe (PackageId, ModuleName), OccName)
 
-fromOnDiskName :: Array Int Name -> NameCache -> OnDiskName -> (NameCache, Name)
-fromOnDiskName _ nc (Nothing, occ) = (nc', name)
+fromOnDiskName :: NameCache -> OnDiskName -> (NameCache, Name)
+fromOnDiskName nc (Nothing, occ) = (nc', name)
   where us = nsUniqs nc
         (us', _) = splitUniqSupply us
         uniq = uniqFromSupply us
         name = mkInternalName uniq occ noSrcSpan        
-        nc' = nc{ nsUniqs = us' } -- TODO: Is this actually a valid thing to do? Or will this fsck up the uniq identity of internal names?
+        nc' = nc{ nsUniqs = us' }
   
-fromOnDiskName _ nc (Just modinfo, occ) = 
+fromOnDiskName nc (Just modinfo, occ) = 
   case lookupOrigNameCache cache mod occ of
      Just name -> (nc, name)
      Nothing   -> let us = nsUniqs nc

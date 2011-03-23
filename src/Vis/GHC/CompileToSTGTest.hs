@@ -11,6 +11,11 @@ import HscTypes
 import Module
 import GHC
 
+import SrcLoc
+import Name
+import Unique
+import Literal
+
 import IO
 import System.Environment (getArgs)
 import Control.Monad
@@ -41,6 +46,23 @@ mainW = do
   forM_ stgs $ \(mod, stg) -> do
     writeStg (fileName "stg" mod) mod stg
     putStrLn . unwords $ ["Creating", fileName "stgb" mod]
-    writeStgb (fileName "stgb" mod) stg
+    writeStgb (fileName "stgb" mod) $ concatMap (simplifyBinding . fst) stg
 
-main = mainR
+testNames :: IO ()
+testNames = do
+  uniq <- return $ mkUnique 'c' 0
+  occ <- return $ mkOccName varName "foo"
+  name <- return $ mkInternalName uniq occ noSrcSpan
+  sstg <- return $ SStgBinding name $ SStgRhsClosure SReEntrant [] $ SStgLit $ MachChar 'z'
+  writeStgb fn [sstg, sstg]
+  
+  [sstg', sstg''] <- runGhc (Just libdir) $ readStgb fn
+  let (SStgBinding name' _) = sstg'
+      (SStgBinding name'' _) = sstg''
+      
+  print $ name' == name''
+  return ()  
+  
+  where fn = "/tmp/foo.stgb"
+
+main = testNames
