@@ -1,4 +1,4 @@
-module Vis.IOUtils (withOpenFile, withOutput, fileName) where
+module Vis.IOUtils (withOpenFile, withOutput, withInput, fileName) where
 
 import HscTypes
 import Module
@@ -14,8 +14,13 @@ withOpenFile fn mode f = do
 
 withOutput :: FilePath -> (Handle -> IO a) -> IO a
 withOutput fn f = do
-  liftIO $ putStrLn . unwords $ ["Creating", fn]
+  putStrLn . unwords $ ["Creating", fn]
   withOpenFile fn WriteMode f
 
-fileName :: ModSummary -> String -> FilePath
-fileName mod ext = replaceExtension (ml_hi_file . ms_location $ mod) ('.':ext)
+withInput :: FilePath -> (Handle -> IO a) -> IO a
+withInput fn f = do
+  putStrLn . unwords $ ["Reading", fn]
+  withOpenFile fn ReadMode f
+
+fileName :: String -> ModSummary -> FilePath
+fileName ext mod = replaceExtension (ml_hi_file . ms_location $ mod) ('.':ext)

@@ -11,6 +11,8 @@ import Unique
 import Control.Arrow
 import Control.Applicative                                       
 
+import Debug.Trace
+
 getTag :: BinHandle -> IO Char
 getTag = get
 
@@ -22,12 +24,13 @@ stgFCallOp_tag = 'f'
 
 instance Binary BinStgOp where
   put_ bh op = case getStgOp op of
-    (StgPrimOp op) -> put_ bh stgPrimOp_tag >> return ()
+    (StgPrimOp op) -> put_ bh stgPrimOp_tag >> put_ bh (42 :: Int)
     (StgPrimCallOp (PrimCall clabel)) -> put_ bh stgPrimCallOp_tag >> put_ bh clabel
     (StgFCallOp fcall u) -> put_ bh stgFCallOp_tag >> put_ bh fcall >> put_ bh (getKey u)
   
   get bh = BinStgOp <$> do
     tag <- getTag bh
+    putStrLn $ unwords ["SStgOp", show tag]
     case () of
       _ | tag == stgPrimOp_tag -> StgPrimOp <$> undefined
         | tag == stgPrimCallOp_tag -> StgPrimCallOp <$> PrimCall <$> get bh
@@ -60,6 +63,7 @@ instance (Binary id) => Binary (SStgExpr id) where
 
   get bh = do
     tag <- getTag bh
+    putStrLn $ unwords ["SStgExpr", show tag]
     case () of
       _ | tag == sStgApp_tag -> SStgApp <$> get bh <*> get bh
         | tag == sStgLit_tag -> SStgLit <$> get bh
@@ -82,6 +86,7 @@ instance (Binary id) => Binary (SStgArg id) where
   
   get bh = do
     tag <- getTag bh
+    putStrLn $ unwords ["SStgArg", show tag]
     case () of
       _ | tag == sStgArgVar_tag -> SStgArgVar <$> get bh
         | tag == sStgArgLit_tag -> SStgArgLit <$> get bh
@@ -93,8 +98,8 @@ instance (Binary id) => Binary (SStgAlt id) where
   get bh = SStgAlt <$> get bh <*> get bh
                           
 data SStgPat id = SStgPatData id [id]
-                   | SStgPatLit Literal
-                   | SStgPatWildcard
+                | SStgPatLit Literal
+                | SStgPatWildcard
                      
 sStgAltData_tag = 'd'
 sStgAltLit_tag = 'l'                     
@@ -116,7 +121,7 @@ data SStgBinding id = SStgBinding id (SStgRhs id)
 
 instance (Binary id) => Binary (SStgBinding id) where
   put_ bh (SStgBinding name rhs) = put_ bh name >> put_ bh rhs
-  get bh = SStgBinding <$> get bh <*> get bh
+  get bh = putStrLn "SStgBinding" >> (SStgBinding <$> get bh <*> get bh)
                               
 -- instance (Binary id) => Binary (SStgBinding id) where
 --   put_ bh (SStgBinding name rhs) = put_ bh name

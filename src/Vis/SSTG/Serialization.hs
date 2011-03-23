@@ -1,4 +1,4 @@
-module Vis.SSTG.Serialization (writeStgb) where
+module Vis.SSTG.Serialization (writeStgb, readStgb) where
 
 import Vis.GHC.CompileToSTG
 import Vis.SSTG.SimpleSTG
@@ -11,8 +11,13 @@ import Name
 import UniqFM
 import FastMutInt
 import Unique
+import UniqSupply
+import IfaceEnv
+import SrcLoc (noSrcSpan)
+import TcRnMonad
 
 import Data.Array
+import Data.List
 import Data.IORef
 import IO
 import System.Environment (getArgs)
@@ -22,10 +27,11 @@ import System.Directory (canonicalizePath)
 import Data.Word
 import Control.Arrow
 
+stgbFileName = fileName "stgb"
+
 -- Based on GHC's BinIface
-writeStgb mod stg = withOutput (fileName mod "stgb") $ \h -> do      
-  bh <- openBinIO h
-  -- bh <- openBinMem initBinMemSize       
+writeStgb mod stg = do
+  bh <- openBinMem initBinMemSize       
        
   -- Remember where the dictionary pointer will go
   fsDict_p_p <- tellBin bh
@@ -63,8 +69,48 @@ writeStgb mod stg = withOutput (fileName mod "stgb") $ \h -> do
   fsDict_map <- readIORef $ fsd_map fsDict
   putDictionary bh fsDict_next fsDict_map    
   
--- initBinMemSize :: Int
--- initBinMemSize = 1024 * 1024
+  writeBinMem bh (stgbFileName mod)
+  
+readStgb :: GhcMonad m => FilePath -> m [SStgBinding Name]
+readStgb fn = do
+  env <- mkEnv
+  liftIO . runIOEnv env $ do
+    update_nc <- mkNameCacheUpdater
+    liftIO $ withInput fn $ \h -> do
+      bh <- openBinIO h
+  
+      dict_p <- get bh
+      data_p <- tellBin bh          -- Remember where we are now           
+      print ("data_p", data_p)        
+      seekBin bh dict_p  
+      print ("dict_p", dict_p)      
+      dict <- getDictionary bh
+      seekBin bh data_p             -- Back to where we were before
+        
+      ud <- newReadState dict
+      bh <- return (setUserData bh ud)        
+             
+      symtab_p <- get bh     -- Get the symtab ptr
+      print ("symtab_p", symtab_p)
+      data_p <- tellBin bh   -- Remember where we are now
+      seekBin bh symtab_p
+      symtab <- getSymbolTable bh update_nc
+      seekBin bh data_p             -- Back to where we were before
+      let ud = getUserData bh
+      bh <- return $! setUserData bh ud{ud_symtab = symtab}
+      get bh
+
+  where mkEnv = do 
+          session <- getSession
+          us <- liftIO $ newIORef =<< mkSplitUniqSupply '_'    
+          return $ Env { env_top = session,
+                         env_us = us,
+                         env_gbl = (),
+                         env_lcl = () }
+
+
+initBinMemSize :: Int
+initBinMemSize = 1024 * 1024
 
 data FastDict a = FastDict { fsd_next :: !FastMutInt,
                              fsd_map :: !(IORef (UniqFM (Int, a))) }
@@ -94,5 +140,41 @@ putSymbolTable bh FastDict{ fsd_next = fsd_next, fsd_map = fsd_map} = do
   map <- readIORef fsd_map
   let names = elems (array (0, idx - 1) (eltsUFM map))
   forM_ names $ \name -> do
-    let mmod = nameModule_maybe name
-    put_ bh (fmap (modulePackageId &&& moduleName) mmod, nameOccName name)
+    let mmod = nameModule_maybe name        
+    put_ bh ((fmap (modulePackageId &&& moduleName) mmod, nameOccName name) :: OnDiskName)
+
+getSymbolTable :: BinHandle -> NameCacheUpdater (Array Int Name) -> IO (Array Int Name)
+getSymbolTable bh update_namecache = do
+  sz <- get bh
+  od_names <- sequence (replicate sz (get bh))
+  update_namecache $ \namecache -> 
+    let (namecache', names) = mapAccumR (fromOnDiskName arr) namecache od_names
+        arr = listArray (0, sz-1) names 
+    in (namecache', arr)
+
+type OnDiskName = (Maybe (PackageId, ModuleName), OccName)
+
+fromOnDiskName :: Array Int Name -> NameCache -> OnDiskName -> (NameCache, Name)
+fromOnDiskName _ nc (Nothing, occ) = (nc, name)
+  where us = nsUniqs nc
+        uniq = uniqFromSupply us
+        name = mkInternalName uniq occ noSrcSpan
+  
+fromOnDiskName _ nc (Just modinfo, occ) = 
+  case lookupOrigNameCache cache mod occ of
+     Just name -> (nc, name)
+     Nothing   -> let us = nsUniqs nc
+                      uniq = uniqFromSupply us
+                      name = mkExternalName uniq mod occ noSrcSpan
+                      cache' = extendNameCache cache (error "mod1" mod) occ name
+                      (us', _)  = splitUniqSupply us
+                  in (nc{ nsUniqs = us', nsNames = cache' }, name)
+  
+    where mod = uncurry mkModule modinfo
+          cache = nsNames nc          
+  
+  --   where mod = fmap (uncurry mkModule) modinfo
+  --         cache = nsNames nc          
+  --         mkName = case mod of
+  --           Just mod -> mkExternalName `flip` mod
+  --           Nothing -> mkInternalName
