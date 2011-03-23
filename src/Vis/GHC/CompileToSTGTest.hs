@@ -17,7 +17,7 @@ import Control.Monad
 import System.Directory (canonicalizePath)
 import GHC.Paths (libdir)
 
-writeStg mod stg = withOutput (fileName "stg" mod) $ \h -> do
+writeStg fn mod stg = withOutput fn $ \h -> do
     let fnSrc = ml_hs_file . ms_location $ mod
     case fnSrc of        
       Just fnSrc -> do
@@ -38,7 +38,7 @@ mainW = do
   args <- getArgs
   stgs <- toStg args
   forM_ stgs $ \(mod, stg) -> do
-    writeStg mod stg
-    writeStgb mod stg
+    writeStg (fileName "stg" mod) mod stg
+    writeStgb (fileName "stgb" mod) stg
 
 main = mainR

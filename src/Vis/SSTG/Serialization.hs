@@ -27,10 +27,8 @@ import System.Directory (canonicalizePath)
 import Data.Word
 import Control.Arrow
 
-stgbFileName = fileName "stgb"
-
 -- Based on GHC's BinIface
-writeStgb mod stg = do
+writeStgb fn stg = do
   bh <- openBinMem initBinMemSize       
        
   -- Remember where the dictionary pointer will go
@@ -46,7 +44,7 @@ writeStgb mod stg = do
   ud <- newWriteState (putSymbol nameDict) (putSymbol fsDict)
   bh <- return $ setUserData bh ud
             
-  mapM_ (put_ bh) $ map (simplifyBinding . fst) stg
+  put_ bh $ concatMap (simplifyBinding . fst) stg
       
   -- Write the symtab pointer at the front of the file
   nameDict_p <- tellBin bh	        -- This is where the symtab will start
@@ -69,21 +67,20 @@ writeStgb mod stg = do
   fsDict_map <- readIORef $ fsd_map fsDict
   putDictionary bh fsDict_next fsDict_map    
   
-  writeBinMem bh (stgbFileName mod)
+  writeBinMem bh fn
   
 readStgb :: GhcMonad m => FilePath -> m [SStgBinding Name]
 readStgb fn = do
   env <- mkEnv
   liftIO . runIOEnv env $ do
     update_nc <- mkNameCacheUpdater
-    liftIO $ withInput fn $ \h -> do
-      bh <- openBinIO h
+    liftIO $ do
+      putStrLn . unwords $ ["Reading", fn]
+      bh <- readBinMem fn
   
       dict_p <- get bh
       data_p <- tellBin bh          -- Remember where we are now           
-      print ("data_p", data_p)        
       seekBin bh dict_p  
-      print ("dict_p", dict_p)      
       dict <- getDictionary bh
       seekBin bh data_p             -- Back to where we were before
         
@@ -91,7 +88,6 @@ readStgb fn = do
       bh <- return (setUserData bh ud)        
              
       symtab_p <- get bh     -- Get the symtab ptr
-      print ("symtab_p", symtab_p)
       data_p <- tellBin bh   -- Remember where we are now
       seekBin bh symtab_p
       symtab <- getSymbolTable bh update_nc
@@ -155,10 +151,12 @@ getSymbolTable bh update_namecache = do
 type OnDiskName = (Maybe (PackageId, ModuleName), OccName)
 
 fromOnDiskName :: Array Int Name -> NameCache -> OnDiskName -> (NameCache, Name)
-fromOnDiskName _ nc (Nothing, occ) = (nc, name)
+fromOnDiskName _ nc (Nothing, occ) = (nc', name)
   where us = nsUniqs nc
+        (us', _) = splitUniqSupply us
         uniq = uniqFromSupply us
-        name = mkInternalName uniq occ noSrcSpan
+        name = mkInternalName uniq occ noSrcSpan        
+        nc' = nc{ nsUniqs = us' } -- TODO: Is this actually a valid thing to do? Or will this fsck up the uniq identity of internal names?
   
 fromOnDiskName _ nc (Just modinfo, occ) = 
   case lookupOrigNameCache cache mod occ of
@@ -166,9 +164,10 @@ fromOnDiskName _ nc (Just modinfo, occ) =
      Nothing   -> let us = nsUniqs nc
                       uniq = uniqFromSupply us
                       name = mkExternalName uniq mod occ noSrcSpan
-                      cache' = extendNameCache cache (error "mod1" mod) occ name
+                      cache' = extendNameCache cache mod occ name
                       (us', _)  = splitUniqSupply us
-                  in (nc{ nsUniqs = us', nsNames = cache' }, name)
+                      nc' = nc{ nsUniqs = us', nsNames = cache' }
+                  in (nc', name)
   
     where mod = uncurry mkModule modinfo
           cache = nsNames nc          

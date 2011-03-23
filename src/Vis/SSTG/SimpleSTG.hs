@@ -30,7 +30,6 @@ instance Binary BinStgOp where
   
   get bh = BinStgOp <$> do
     tag <- getTag bh
-    putStrLn $ unwords ["SStgOp", show tag]
     case () of
       _ | tag == stgPrimOp_tag -> StgPrimOp <$> undefined
         | tag == stgPrimCallOp_tag -> StgPrimCallOp <$> PrimCall <$> get bh
@@ -63,7 +62,6 @@ instance (Binary id) => Binary (SStgExpr id) where
 
   get bh = do
     tag <- getTag bh
-    putStrLn $ unwords ["SStgExpr", show tag]
     case () of
       _ | tag == sStgApp_tag -> SStgApp <$> get bh <*> get bh
         | tag == sStgLit_tag -> SStgLit <$> get bh
@@ -86,7 +84,6 @@ instance (Binary id) => Binary (SStgArg id) where
   
   get bh = do
     tag <- getTag bh
-    putStrLn $ unwords ["SStgArg", show tag]
     case () of
       _ | tag == sStgArgVar_tag -> SStgArgVar <$> get bh
         | tag == sStgArgLit_tag -> SStgArgLit <$> get bh
@@ -121,7 +118,7 @@ data SStgBinding id = SStgBinding id (SStgRhs id)
 
 instance (Binary id) => Binary (SStgBinding id) where
   put_ bh (SStgBinding name rhs) = put_ bh name >> put_ bh rhs
-  get bh = putStrLn "SStgBinding" >> (SStgBinding <$> get bh <*> get bh)
+  get bh = SStgBinding <$> get bh <*> get bh
                               
 -- instance (Binary id) => Binary (SStgBinding id) where
 --   put_ bh (SStgBinding name rhs) = put_ bh name
