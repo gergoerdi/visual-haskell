@@ -10,8 +10,8 @@ import Unique
 
 import Control.Arrow
 import Control.Applicative                                       
-
-import Debug.Trace
+import Data.IntMap (IntMap, (!))
+import qualified Data.IntMap as IntMap
 
 getTag :: BinHandle -> IO Char
 getTag = get
@@ -22,16 +22,19 @@ stgPrimOp_tag = 'o'
 stgPrimCallOp_tag = 'c'
 stgFCallOp_tag = 'f'
 
+stgPrimOp_map :: IntMap PrimOp
+stgPrimOp_map = IntMap.fromList $ map (\ op -> (primOpTag op, op)) allThePrimOps
+
 instance Binary BinStgOp where
   put_ bh op = case getStgOp op of
-    (StgPrimOp op) -> put_ bh stgPrimOp_tag >> put_ bh (42 :: Int)
+    (StgPrimOp op) -> put_ bh stgPrimOp_tag >> put_ bh (primOpTag op)
     (StgPrimCallOp (PrimCall clabel)) -> put_ bh stgPrimCallOp_tag >> put_ bh clabel
     (StgFCallOp fcall u) -> put_ bh stgFCallOp_tag >> put_ bh fcall >> put_ bh (getKey u)
-  
+    
   get bh = BinStgOp <$> do
     tag <- getTag bh
     case () of
-      _ | tag == stgPrimOp_tag -> StgPrimOp <$> undefined
+      _ | tag == stgPrimOp_tag -> StgPrimOp <$> (stgPrimOp_map!) <$> get bh
         | tag == stgPrimCallOp_tag -> StgPrimCallOp <$> PrimCall <$> get bh
         | tag == stgFCallOp_tag -> StgFCallOp <$> get bh <*> (mkUniqueGrimily <$> get bh)
                    

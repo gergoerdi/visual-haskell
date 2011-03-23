@@ -30,6 +30,7 @@ mainR :: IO ()
 mainR = runGhc (Just libdir) $ do
   -- sstg <- readStgb "/tmp/base/Data/List.stgb"
   sstg <- readStgb "/tmp/GHC/Integer/Type.stgb"
+  sstg <- readStgb "/tmp/GHC/Integer.stgb"
   -- sstg <- readStgb "/tmp/GHC/Bool.stgb"
   return ()
 
@@ -39,6 +40,7 @@ mainW = do
   stgs <- toStg args
   forM_ stgs $ \(mod, stg) -> do
     writeStg (fileName "stg" mod) mod stg
+    putStrLn . unwords $ ["Creating", fileName "stgb" mod]
     writeStgb (fileName "stgb" mod) stg
 
 main = mainR
