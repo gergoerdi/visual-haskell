@@ -28,12 +28,15 @@ writeStg fn mod stg = withOutput fn $ \h -> do
 main :: IO ()
 main = do    
   args <- getArgs
-  (pkgId, moutDir, stgs) <- compileToStg args
-  forM_ stgs $ \(mod, stg) -> do
-    writeStg (fileName "stg" mod) mod stg    
+  cr <- compileToStg args
+  
+  let stgs = cr_stgs cr
+  when (DumpStg `elem` (cr_opts cr)) $ 
+    forM_ stgs $ \(mod, stg) -> do
+      writeStg (fileName "stg" mod) mod stg    
     
-  outDir <- maybe getCurrentDirectory return moutDir
-  let stgbName = outDir </> packageIdString pkgId `addExtension` ".stgb"
+  outDir <- maybe getCurrentDirectory return (cr_outDir cr)
+  let stgbName = outDir </> packageIdString (cr_packageId cr) `addExtension` ".stgb"
   putStrLn . unwords $ ["Creating", stgbName]
   let bindings = map fst $ concatMap snd stgs
   writeStgb stgbName $ concatMap simplifyBinding bindings

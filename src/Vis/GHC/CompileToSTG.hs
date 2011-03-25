@@ -1,4 +1,4 @@
-module Vis.GHC.CompileToSTG (compileToStg, Stg) where
+module Vis.GHC.CompileToSTG (compileToStg, Stg, CompileFlags(..), CompileRes(..)) where
 
 import GHC
 import HscTypes
@@ -18,12 +18,13 @@ import SimplStg (stg2stg)
 import Var (Id)
 import StgSyn (GenStgBinding)
 import TcRnTypes (TcGblEnv)
+import CmdLineParser
 
 import Control.Monad
 import Data.Maybe
 import Control.Applicative
-
-import Outputable
+import Control.Monad.Writer (runWriter, tell)
+import Data.Monoid
 
 parseAndTypecheck :: (GhcMonad m) => ModSummary -> m DesugaredModule
 parseAndTypecheck mod = parseModule mod >>= typecheckModule >>= desugarModule
@@ -48,13 +49,23 @@ compileModule mod = do
     (stg_binds', _ccs) <- stg2stg dflags this_mod stg_binds
     return stg_binds'
   
-compileToStg :: [String] -> IO (PackageId, Maybe FilePath, [(ModSummary, Stg Id)])
-compileToStg args = runGhc (Just libdir) $ do
-  dflags <- getSessionDynFlags
-  (dflags, lfilenames, _) <- parseDynamicFlags dflags (map noLoc args)
+data CompileFlags = DumpStg
+                  deriving (Eq, Show)
   
-  let filenames = map unLoc lfilenames
+data CompileRes = CompileRes { cr_packageId :: PackageId,
+                               cr_outDir :: Maybe FilePath,
+                               cr_opts :: [CompileFlags],
+                               cr_stgs :: [(ModSummary, Stg Id)] }
+  
+compileToStg :: [String] -> IO CompileRes
+compileToStg args = runGhc (Just libdir) $ do
+  dflags <- getSessionDynFlags  
+  (dflags, largs, _) <- parseDynamicFlags dflags (map noLoc args)
   _ <- setSessionDynFlags dflags
+  
+  let flags = [Flag "dump-stg" (NoArg (tell [DumpStg])) Supported]
+  let ((lfilenames, _, _), opts) = runWriter $ processArgs flags largs
+      filenames = map unLoc lfilenames
 
   targets <- mapM (guessTarget `flip` Nothing) filenames
   setTargets targets
@@ -71,4 +82,4 @@ compileToStg args = runGhc (Just libdir) $ do
         stg <- compileModule mod
         return $ Just (mod, stg)
         
-  return (thisPackage dflags, hiDir dflags, catMaybes result)
+  return $ CompileRes (thisPackage dflags) (hiDir dflags) opts (catMaybes result)
