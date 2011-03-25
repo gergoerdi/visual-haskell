@@ -24,17 +24,19 @@ import GHC.Paths (libdir)
 import System.FilePath
 import System.Directory
 
+import Outputable
+
 main :: IO ()
-main = runGhc (Just libdir) $ do
-  -- sstg <- readStgb "/tmp/base/Data/List.stgb"
-  -- sstg <- readStgb "/tmp/GHC/Integer/Type.stgb"
-  -- sstg <- readStgb "/tmp/GHC/Integer.stgb"
-  -- sstg <- readStgb "/tmp/GHC/Bool.stgb"
-  sstg <- do
-    liftIO $ putStrLn . unwords $ ["Reading", fileName]
-    readStgb fileName
+main = do
+  [fileName] <- getArgs
+  runGhc (Just libdir) $ do
+    sstgs <- do
+      liftIO $ putStrLn . unwords $ ["Reading", fileName]
+      readStgb fileName
+    forM_ sstgs $ \(SStgBinding id rhs) -> do
+      liftIO $ putStrLn $ showSDoc $ ppr id
+    return ()
   return ()
-  where fileName = "/tmp/ghc-prim/ghc-prim.stgb"
 
 testNames :: IO ()
 testNames = do
