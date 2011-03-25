@@ -27,6 +27,7 @@ import Data.Word
 import Control.Arrow
 
 -- Based on GHC's BinIface
+writeStgb :: FilePath -> [SStgBinding Name] -> IO ()
 writeStgb fn sstgs = do
   bh <- openBinMem initBinMemSize       
        
