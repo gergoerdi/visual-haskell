@@ -1,7 +1,6 @@
-module Vis.SSTG.Serialization (writeStgb, readStgb) where
+module SSTG.Serialization (writeStgb, readStgb) where
 
-import Vis.SSTG.SimpleSTG
-import Vis.IOUtils
+import SSTG.SimpleSTG
 
 import HscTypes
 import Module
@@ -18,11 +17,7 @@ import TcRnMonad
 import Data.Array
 import Data.List
 import Data.IORef
-import IO
-import System.Environment (getArgs)
 import Control.Monad
-import System.FilePath (replaceExtension)
-import System.Directory (canonicalizePath)
 import Data.Word
 import Control.Arrow
 

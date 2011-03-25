@@ -1,28 +1,19 @@
 module Main where
 
-import Vis.GHC.CompileToSTG
-import Vis.SSTG.SimpleSTG
-import Vis.IOUtils
-import Vis.SSTG.Serialization
+import SSTG.SimpleSTG
+import SSTG.Serialization
 
 import Outputable
-import StgSyn (pprStgBindings)
 import HscTypes
-import Module
 import GHC
 
-import SrcLoc
 import Name
 import Unique
 import Literal
 
-import IO
 import System.Environment (getArgs)
 import Control.Monad
-import System.Directory (canonicalizePath)
 import GHC.Paths (libdir)
-import System.FilePath
-import System.Directory
 
 import Outputable
 

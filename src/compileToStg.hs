@@ -1,9 +1,9 @@
 module Main where
 
-import Vis.GHC.CompileToSTG
-import Vis.SSTG.SimpleSTG
-import Vis.IOUtils
-import Vis.SSTG.Serialization
+import SSTG.GHC.CompileToSTG
+import SSTG.SimpleSTG
+-- import IOUtils
+import SSTG.Serialization
 
 import Outputable
 import StgSyn (pprStgBindings)
@@ -15,7 +15,21 @@ import System.Environment (getArgs)
 import Control.Monad
 import System.FilePath
 import System.Directory
+import Control.Applicative
 
+fileName :: String -> ModSummary -> FilePath
+fileName ext mod = replaceExtension (ml_hi_file . ms_location $ mod) ('.':ext)
+
+withOpenFile :: FilePath -> IOMode -> (Handle -> IO a) -> IO a
+withOpenFile fn mode f = do
+  h <- openFile fn mode
+  f h <* hClose h
+
+withOutput :: FilePath -> (Handle -> IO a) -> IO a
+withOutput fn f = do
+  putStrLn . unwords $ ["Creating", fn]
+  withOpenFile fn WriteMode f
+  
 writeStg fn mod stg = withOutput fn $ \h -> do
     let fnSrc = ml_hs_file . ms_location $ mod
     case fnSrc of        

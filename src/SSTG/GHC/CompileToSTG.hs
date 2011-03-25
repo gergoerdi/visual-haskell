@@ -1,30 +1,19 @@
-module Vis.GHC.CompileToSTG (compileToStg, Stg, CompileFlags(..), CompileRes(..)) where
+module SSTG.GHC.CompileToSTG (compileToStg, Stg, CompileFlags(..), CompileRes(..)) where
 
 import GHC
 import HscTypes
 import HscMain
-import SrcLoc
-import HeaderInfo
-import Finder
-import Module
-import StringBuffer
-import System.Directory
 import GHC.Paths (libdir)
-import DynFlags (thisPackage)
 import CorePrep (corePrepPgm)
 import TyCon (isDataTyCon)
 import CoreToStg (coreToStg)
 import SimplStg (stg2stg)
-import Var (Id)
 import StgSyn (GenStgBinding)
-import TcRnTypes (TcGblEnv)
 import CmdLineParser
 
 import Control.Monad
 import Data.Maybe
-import Control.Applicative
 import Control.Monad.Writer (runWriter, tell)
-import Data.Monoid
 
 parseAndTypecheck :: (GhcMonad m) => ModSummary -> m DesugaredModule
 parseAndTypecheck mod = parseModule mod >>= typecheckModule >>= desugarModule
