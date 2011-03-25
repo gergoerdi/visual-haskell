@@ -21,32 +21,20 @@ import System.Environment (getArgs)
 import Control.Monad
 import System.Directory (canonicalizePath)
 import GHC.Paths (libdir)
+import System.FilePath
+import System.Directory
 
-writeStg fn mod stg = withOutput fn $ \h -> do
-    let fnSrc = ml_hs_file . ms_location $ mod
-    case fnSrc of        
-      Just fnSrc -> do
-        fnSrc' <- canonicalizePath fnSrc
-        hPutStrLn h $ unwords ["--", "Compiled from", fnSrc']
-      Nothing -> return ()
-    printForUser h neverQualify $ pprStgBindings $ map fst stg    
-
-mainR :: IO ()
-mainR = runGhc (Just libdir) $ do
+main :: IO ()
+main = runGhc (Just libdir) $ do
   -- sstg <- readStgb "/tmp/base/Data/List.stgb"
-  sstg <- readStgb "/tmp/GHC/Integer/Type.stgb"
-  sstg <- readStgb "/tmp/GHC/Integer.stgb"
+  -- sstg <- readStgb "/tmp/GHC/Integer/Type.stgb"
+  -- sstg <- readStgb "/tmp/GHC/Integer.stgb"
   -- sstg <- readStgb "/tmp/GHC/Bool.stgb"
+  sstg <- do
+    liftIO $ putStrLn . unwords $ ["Reading", fileName]
+    readStgb fileName
   return ()
-
-mainW :: IO ()
-mainW = do    
-  args <- getArgs
-  stgs <- toStg args
-  forM_ stgs $ \(mod, stg) -> do
-    writeStg (fileName "stg" mod) mod stg
-    putStrLn . unwords $ ["Creating", fileName "stgb" mod]
-    writeStgb (fileName "stgb" mod) $ concatMap (simplifyBinding . fst) stg
+  where fileName = "/tmp/ghc-prim/ghc-prim.stgb"
 
 testNames :: IO ()
 testNames = do
@@ -64,5 +52,3 @@ testNames = do
   return ()  
   
   where fn = "/tmp/foo.stgb"
-
-main = testNames

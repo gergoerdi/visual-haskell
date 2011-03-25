@@ -74,7 +74,6 @@ readStgb fn = do
   liftIO . runIOEnv env $ do
     update_nc <- mkNameCacheUpdater
     liftIO $ do
-      putStrLn . unwords $ ["Reading", fn]
       bh <- readBinMem fn
   
       dict_p <- get bh

@@ -1,4 +1,4 @@
-module Vis.GHC.CompileToSTG (toStg, Stg) where
+module Vis.GHC.CompileToSTG (compileToStg, Stg) where
 
 import GHC
 import HscTypes
@@ -23,13 +23,15 @@ import Control.Monad
 import Data.Maybe
 import Control.Applicative
 
+import Outputable
+
 parseAndTypecheck :: (GhcMonad m) => ModSummary -> m DesugaredModule
 parseAndTypecheck mod = parseModule mod >>= typecheckModule >>= desugarModule
 
 type Stg id = [(GenStgBinding id id, [(id, [id])])]
 
-compileToStg :: (GhcMonad m) => ModSummary -> m (Stg Id)
-compileToStg mod = do
+compileModule :: (GhcMonad m) => ModSummary -> m (Stg Id)
+compileModule mod = do
   core <- parseAndTypecheck mod
   let guts = coreModule core
   guts' <- hscSimplify guts
@@ -46,12 +48,13 @@ compileToStg mod = do
     (stg_binds', _ccs) <- stg2stg dflags this_mod stg_binds
     return stg_binds'
   
-toStg :: [String] -> IO [(ModSummary, Stg Id)]
-toStg args = runGhc (Just libdir) $ do
+compileToStg :: [String] -> IO (PackageId, Maybe FilePath, [(ModSummary, Stg Id)])
+compileToStg args = runGhc (Just libdir) $ do
   dflags <- getSessionDynFlags
-  (dflags', lfilenames, _) <- parseDynamicFlags dflags (map noLoc args)
+  (dflags, lfilenames, _) <- parseDynamicFlags dflags (map noLoc args)
+  
   let filenames = map unLoc lfilenames
-  _ <- setSessionDynFlags dflags'
+  _ <- setSessionDynFlags dflags
 
   targets <- mapM (guessTarget `flip` Nothing) filenames
   setTargets targets
@@ -65,7 +68,7 @@ toStg args = runGhc (Just libdir) $ do
         return Nothing
       _ -> do 
         liftIO $ putStrLn . unwords $ ["Compiling", name]
-        stg <- compileToStg mod
+        stg <- compileModule mod
         return $ Just (mod, stg)
         
-  return $ catMaybes result
+  return (thisPackage dflags, hiDir dflags, catMaybes result)
