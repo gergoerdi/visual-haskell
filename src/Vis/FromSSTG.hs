@@ -51,8 +51,6 @@ fromExpr (SStgOpApp op args) = mkCNode Nothing False =<< PrimApp prim <$> mapM f
           StgPrimCallOp call -> let PrimCall fs = call in error $ unwords ["Unimplemented", "StgPrimCallOp", unpackFS fs]
           StgFCallOp (CCall ccall) _ -> error $ unwords ["Unimplemented", "StgFCallOp", unpackFS target]
             where CCallSpec (StaticTarget target) conv safety = ccall
-                  
-  
 fromExpr (SStgLam vars body) = mkCNode Nothing False =<< Lambda vars <$> fromExpr body
 fromExpr (SStgCase expr (a:as)) = do
   alts <- mapM fromAlt (as ++ [a]) -- we rotate a:as to make sure the wildcard case (if any) is the last one
