@@ -1,11 +1,13 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Vis.Node (
-  BuiltinFun(..), 
   FPayload, FNode(..),
-  Bind(..), Alt(..), Pat(..), Payload(..), Lit(..),  
+  Bind(..), Alt(..), Pat(..), Payload(..), 
   FName(..),
   Serial(unSerial), firstSerial
   ) where
+
+import PrimOp
+import Literal
 
 newtype Serial = Serial { unSerial :: Int } deriving (Show, Eq, Ord, Enum)
 firstSerial :: Serial
@@ -14,14 +16,10 @@ firstSerial = Serial 0
 data Pat name = PConApp name [Pat name]
               | PVar name
               | PWildcard
-              | PLit Lit
+              | PLiteral Literal
               | PAsPat name (Pat name)
               deriving Show
                     
-data Lit = IntLit Integer                  
-         | CharLit Char
-         deriving (Show, Eq)
-                       
 data Bind name = Bind (FName name) (FNode name)
                deriving Show
 
@@ -33,16 +31,12 @@ data Alt name node = Alt { altPattern :: Pat name,
                            altBody :: node }
               deriving Show
                
-data BuiltinFun = IntPlus
-                | IntMinus
-                deriving Show
-               
 data Payload name node = Lambda [name] node
                        | ParamRef name
-                       | Lit Lit
+                       | Literal Literal
                        | App node [node]
-                       | Case [Alt name node] node
-                       | BuiltinFunApp BuiltinFun [node]
+                       | Case node [Alt name node]
+                       | PrimApp PrimOp [node]
                        | ConApp name [node]
                        deriving Show
                                 
