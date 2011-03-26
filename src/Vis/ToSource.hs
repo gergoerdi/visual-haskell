@@ -103,3 +103,4 @@ projectPat :: Pat Name -> H.HsPat
 projectPat (PVar x) = H.HsPVar $ projectName x
 projectPat (PAsPat x p) = H.HsPAsPat (projectName x) $ projectPat p
 projectPat (PConApp c ps) = H.HsPApp (H.UnQual $ projectName c) $ map projectPat ps
+projectPat PWildcard = H.HsPWildCard

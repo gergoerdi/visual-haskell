@@ -7,6 +7,9 @@ import Vis.CNode
 
 import StgSyn
 import Name
+import ForeignCall
+import FastString
+import PrimOp
 
 import Control.Applicative
 import Control.Monad.Reader
@@ -43,7 +46,13 @@ fromExpr (SStgApp f args) = mkCNode Nothing False =<< App <$> fromVar f <*> mapM
 fromExpr (SStgLit lit) = mkCNode Nothing False $ Literal lit
 fromExpr (SStgConApp con args) = mkCNode Nothing False =<< ConApp con <$> mapM fromArg args
 fromExpr (SStgOpApp op args) = mkCNode Nothing False =<< PrimApp prim <$> mapM fromArg args
-  where StgPrimOp prim = op
+  where prim = case op of
+          StgPrimOp prim -> prim
+          StgPrimCallOp call -> let PrimCall fs = call in error $ unwords ["Unimplemented", "StgPrimCallOp", unpackFS fs]
+          StgFCallOp (CCall ccall) _ -> error $ unwords ["Unimplemented", "StgFCallOp", unpackFS target]
+            where CCallSpec (StaticTarget target) conv safety = ccall
+                  
+  
 fromExpr (SStgLam vars body) = mkCNode Nothing False =<< Lambda vars <$> fromExpr body
 fromExpr (SStgCase expr (a:as)) = do
   alts <- mapM fromAlt (as ++ [a]) -- we rotate a:as to make sure the wildcard case (if any) is the last one
