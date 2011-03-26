@@ -57,12 +57,12 @@ cloneNode node = do
 
 clonePayload :: Ord name => CPayload s name -> Cloner s name (CPayload s name)
 clonePayload (Lambda pat node) = Lambda pat <$> cloneNode node
-clonePayload (Lit n) = return $ Lit n
+clonePayload p@(Literal lit) = return p
 clonePayload (App e args) = App <$> cloneNode e <*> mapM cloneNode args
-clonePayload (BuiltinFunApp f args) = BuiltinFunApp f <$> mapM cloneNode args
-clonePayload (Case alts arg) = Case <$> mapM cloneAlt alts <*> cloneNode arg
+clonePayload (PrimApp op args) = PrimApp op <$> mapM cloneNode args
+clonePayload (Case expr alts) = Case <$> cloneNode expr <*> mapM cloneAlt alts
 clonePayload (ConApp c args) = ConApp c <$> mapM cloneNode args
-clonePayload (ParamRef x) = return $ ParamRef x
+clonePayload p@(ParamRef x) = return p
 
 cloneAlt (Alt pat body) = Alt pat <$> withoutVars vars (cloneNode body)
   where vars = execWriter $ varsOf pat

@@ -17,6 +17,7 @@ import qualified Data.Map as Map
 import Data.Monoid
 
 import Name
+import Literal
 
 toSource :: FNode Name -> H.HsExp
 toSource = parenExpr . projectNode
@@ -88,15 +89,14 @@ projectPayload :: Payload Name (FNode Name) -> H.HsExp
 projectPayload (Lambda [] node) = projectNode node
 projectPayload (Lambda vars node) = H.HsLambda noLoc (map (H.HsPVar . projectName) vars) $ projectNode node
 projectPayload (ParamRef x) = H.HsVar $ H.UnQual $ projectName x
-projectPayload (Lit (IntLit n)) = H.HsLit $ H.HsInt n  
+projectPayload (Literal lit) = H.HsLit $ case lit of
+  MachInt n -> H.HsInt n
 projectPayload (App e args) = toApp (projectNode e:map projectNode args)
-projectPayload (BuiltinFunApp op args) = toApp $ fun:(map projectNode args)
-  where fun = case op of
-          IntPlus -> H.HsVar (H.UnQual $ H.HsSymbol "+#")
-          IntMinus -> H.HsVar (H.UnQual $ H.HsSymbol "-#")
+projectPayload (PrimApp op args) = toApp $ fun:(map projectNode args)
+  where fun = H.HsVar $ H.UnQual $ H.HsIdent $ show op
 projectPayload (ConApp c args) = toApp $ con:(map projectNode args)
   where con = H.HsCon $ H.UnQual $ projectName c
-projectPayload (Case alts arg) = H.HsCase (projectNode arg) $ map projectAlt alts
+projectPayload (Case e alts) = H.HsCase (projectNode e) $ map projectAlt alts
   where projectAlt (Alt pat node) = H.HsAlt noLoc (projectPat pat) (H.HsUnGuardedAlt $ projectNode node) []
 
 projectPat :: Pat Name -> H.HsPat
