@@ -35,7 +35,7 @@ data Payload name node = Lambda [name] node
                        | ParamRef name
                        | Literal Literal
                        | App node [node]
-                       | Case node [Alt name node]
+                       | Case name node [Alt name node]
                        | PrimApp PrimOp [node]
                        | ConApp name [node]
                        deriving Show
