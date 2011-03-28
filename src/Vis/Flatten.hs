@@ -31,8 +31,9 @@ sharedNodes node = map fst <$> filter snd <$> Map.toAscList <$>
         collectPayload (Lambda pat node) = collectNode node
         collectPayload (App e args) = collectNode e >> mapM_ collectNode args
         collectPayload (PrimApp _ args) = mapM_ collectNode args
+        collectPayload (BuiltinApp _ args) = mapM_ collectNode args
         collectPayload (ConApp _ args) = mapM_ collectNode args
-        collectPayload (Case _ e alts) = collectNode e >> mapM_ collectAlt alts
+        collectPayload (Case e alts) = collectNode e >> mapM_ collectAlt alts
         collectPayload _ = return ()
         
         collectAlt (Alt _ body) = collectNode body
@@ -87,9 +88,10 @@ flattenThunk = flattenPayload . cthunkPayload
 flattenPayload :: Payload name (CNode s name) -> ToSource s name (FPayload name)
 flattenPayload (Lambda pat node) = Lambda pat <$> flattenNode node
 flattenPayload (App e args) = liftM2 App (flattenNode e) (mapM flattenNode args)
+flattenPayload (BuiltinApp op args) = liftM (BuiltinApp op) $ mapM flattenNode args
 flattenPayload (PrimApp op args) = liftM (PrimApp op) $ mapM flattenNode args
 flattenPayload (ConApp c args) = liftM (ConApp c) $ mapM flattenNode args
-flattenPayload (Case x e alts) = liftM2 (Case x) (flattenNode e) (mapM flattenAlt alts)
+flattenPayload (Case e alts) = liftM2 Case (flattenNode e) (mapM flattenAlt alts)
   where flattenAlt (Alt pats node) = liftM (Alt pats) $ flattenNode node
 flattenPayload (ParamRef x) = return $ ParamRef x
 flattenPayload (Literal lit) = return $ Literal lit

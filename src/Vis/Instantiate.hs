@@ -31,17 +31,15 @@ cloneNode :: Ord name => CNode s name -> Cloner s name (CNode s name)
 cloneNode node = do
   thunk <- lift $ readThunk node
   if cthunkReentrant thunk
-     then do
-       entered <- asks (Set.member node . snd)
-       if entered then return node else local (second $ Set.insert node) $ cloneNode' thunk
-     else
-       case cthunkPayload thunk of
-         ParamRef x -> do
-           actual <- asks (Map.lookup x . fst)
-           case actual of
-             Just actual -> return actual
-             Nothing -> cloneNode' thunk
-         _ -> cloneNode' thunk
+    then return node
+    else
+      case cthunkPayload thunk of
+        ParamRef x -> do
+          actual <- asks (Map.lookup x . fst)
+          case actual of
+            Just actual -> return actual
+            Nothing -> cloneNode' thunk
+        _ -> cloneNode' thunk
     
   where cloneNode' thunk = do
           cloned <- gets (Map.lookup node)
@@ -52,13 +50,13 @@ cloneNode node = do
               modify (Map.insert node node')              
               payload' <- clonePayload (cthunkPayload thunk)
               lift $ writeThunk node' $ CThunk False payload'
-              return node'
-          
+              return node'                    
 
 clonePayload :: Ord name => CPayload s name -> Cloner s name (CPayload s name)
 clonePayload (Lambda pat node) = Lambda pat <$> cloneNode node
 clonePayload p@(Literal lit) = return p
 clonePayload (App e args) = App <$> cloneNode e <*> mapM cloneNode args
+clonePayload (BuiltinApp op args) = BuiltinApp op <$> mapM cloneNode args
 clonePayload (PrimApp op args) = PrimApp op <$> mapM cloneNode args
 clonePayload (Case expr alts) = Case <$> cloneNode expr <*> mapM cloneAlt alts
 clonePayload (ConApp c args) = ConApp c <$> mapM cloneNode args

@@ -16,11 +16,12 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Monoid
 
-import Name
+import RdrName
+import OccName
 import Literal
 import FastString
 
-toSource :: FNode Name -> H.HsExp
+toSource :: FNode VarName -> H.HsExp
 toSource = parenExpr . projectNode
 
 paren :: H.HsExp -> H.HsExp                 
@@ -30,6 +31,12 @@ paren e@(H.HsVar _) = e
 paren e@(H.HsTuple _) = e
 paren e = H.HsParen e
                  
+parenP :: H.HsPat -> H.HsPat          
+parenP p@(H.HsPParen _) = p
+parenP p@(H.HsPVar _) = p
+parenP p@(H.HsPTuple _) = p
+parenP p = H.HsPParen p
+          
 parenExpr (H.HsApp (H.HsApp op left) right) | Just opName <- getInfix = H.HsInfixApp left' opName right'
   where getInfix = case op of
           H.HsCon c@(H.Special H.HsCons) -> Just $ H.HsQConOp c
@@ -48,19 +55,22 @@ parenExpr (H.HsCase e alts) = H.HsCase (parenExpr e) (map parenAlt alts)
 parenExpr (H.HsIrrPat e) = H.HsIrrPat $ parenExpr e
 parenExpr expr = expr
 
-parenAlt (H.HsAlt loc pat gAlt wheres) = H.HsAlt loc pat (parenGAlt gAlt) (map parenDecl wheres)
+parenPat (H.HsPAsPat x pat) = H.HsPAsPat x $ parenP $ parenPat pat
+parenPat pat = pat
+
+parenAlt (H.HsAlt loc pat gAlt wheres) = H.HsAlt loc (parenPat pat) (parenGAlt gAlt) (map parenDecl wheres)
 
 parenGAlt (H.HsUnGuardedAlt expr) = H.HsUnGuardedAlt $ parenExpr expr
 
-parenDecl (H.HsPatBind loc pat rhs wheres) = H.HsPatBind loc pat (parenRhs rhs) (map parenDecl wheres)
+parenDecl (H.HsPatBind loc pat rhs wheres) = H.HsPatBind loc (parenPat pat) (parenRhs rhs) (map parenDecl wheres)
 parenDecl (H.HsFunBind matches) = H.HsFunBind $ map parenMatch matches
 
-parenMatch (H.HsMatch loc name pats rhs wheres) = H.HsMatch loc name pats (parenRhs rhs) (map parenDecl wheres)
+parenMatch (H.HsMatch loc name pats rhs wheres) = H.HsMatch loc name (map parenPat pats) (parenRhs rhs) (map parenDecl wheres)
 
 parenRhs (H.HsUnGuardedRhs expr) = H.HsUnGuardedRhs $ parenExpr expr
 
 
-projectNode :: FNode Name -> H.HsExp
+projectNode :: FNode VarName -> H.HsExp
 projectNode (FNode payload) = projectPayload payload
 projectNode (FVarRef x) = H.HsVar $ H.UnQual $ projectFName x
 projectNode (FLet binds body) = H.HsLet (map projectBind binds) $ projectNode body
@@ -81,11 +91,11 @@ projectFName (Given n) = projectName n
 projectFName (Generated s) = H.HsIdent $ "v" ++ show (unSerial s)
 
 projectName name = (if isSymOcc occ then H.HsSymbol else H.HsIdent) $ occNameString occ
-  where occ = nameOccName name
+  where occ = rdrNameOcc name
 
 noLoc = H.SrcLoc "foo" 0 0 -- error "No location"
 
-projectPayload :: Payload Name (FNode Name) -> H.HsExp
+projectPayload :: FPayload VarName -> H.HsExp
 projectPayload (Lambda [] node) = projectNode node
 projectPayload (Lambda vars node) = H.HsLambda noLoc (map (H.HsPVar . projectName) vars) $ projectNode node
 projectPayload (ParamRef x) = H.HsVar $ H.UnQual $ projectName x
@@ -96,8 +106,7 @@ projectPayload (PrimApp op args) = toApp $ fun:(map projectNode args)
   where fun = H.HsVar $ H.UnQual $ H.HsIdent $ show op
 projectPayload (ConApp c args) = toApp $ con:(map projectNode args)
   where con = H.HsCon $ H.UnQual $ projectName c
-projectPayload (Case x e alts) = H.HsLet [projectBind $ Bind (Given x) e] $ 
-                                   H.HsCase (H.HsVar $ H.UnQual $ projectName x) $ map projectAlt alts
+projectPayload (Case e alts) = H.HsCase (projectNode e) $ map projectAlt alts
   where projectAlt (Alt pat node) = H.HsAlt noLoc (projectPat pat) (H.HsUnGuardedAlt $ projectNode node) []
 
 projectLit :: Literal -> H.HsLiteral
@@ -111,7 +120,7 @@ projectLit (MachFloat r) = H.HsFloatPrim r
 projectLit (MachDouble r) = H.HsDoublePrim r
 projectLit (MachNullAddr) = error "NullPtr"  
 
-projectPat :: Pat Name -> H.HsPat
+projectPat :: Pat VarName -> H.HsPat
 projectPat (PVar x) = H.HsPVar $ projectName x
 projectPat (PAsPat x p) = H.HsPAsPat (projectName x) $ projectPat p
 projectPat (PConApp c ps) = H.HsPApp (H.UnQual $ projectName c) $ map projectPat ps

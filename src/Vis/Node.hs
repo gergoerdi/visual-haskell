@@ -1,5 +1,6 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Vis.Node (
+  VarName, BuiltinOp(..), builtinOps,
   FPayload, FNode(..),
   Bind(..), Alt(..), Pat(..), Payload(..), 
   FName(..),
@@ -8,6 +9,9 @@ module Vis.Node (
 
 import PrimOp
 import Literal
+import RdrName
+
+type VarName = RdrName
 
 newtype Serial = Serial { unSerial :: Int } deriving (Show, Eq, Ord, Enum)
 firstSerial :: Serial
@@ -35,10 +39,58 @@ data Payload name node = Lambda [name] node
                        | ParamRef name
                        | Literal Literal
                        | App node [node]
-                       | Case name node [Alt name node]
+                       | Case node [Alt name node]
                        | PrimApp PrimOp [node]
+                       | BuiltinApp BuiltinOp [node]
                        | ConApp name [node]
                        deriving Show
+                                
+data BuiltinOp = SmallInteger                                
+               | PlusInteger
+               | TimesInteger
+               | ToInt
+               | EqInteger
+               | NEqInteger
+               | CompareInteger
+               | LtInteger
+               | LeInteger
+               | GtInteger
+               | GeInteger
+               | QuotRemInteger
+               | RemInteger
+               | QuotInteger
+               | DivModInteger
+               | DivInteger
+               | ModInteger
+               | NegateInteger
+               | MinusInteger
+               | AbsInteger
+               | SignumInteger
+               | FloatFromInteger
+               | EncodeFloatInteger
+               | DoubleFromInteger
+               | EncodeDoubleInteger
+               | DecodeDoubleInteger
+               | WordToInteger
+               | IntegerToWord
+               | ShiftLInteger
+               | ShiftRInteger
+               | OrInteger
+               | AndInteger
+               | ComplementInteger
+               | XorInteger
+                 
+               | DebugErrLn
+                 
+               | IrrefutPatError
+               | PatError
+               | Error
+                 
+               | RealWorld
+               deriving (Eq, Show, Bounded, Enum)                        
+                        
+builtinOps :: [BuiltinOp]
+builtinOps = [minBound..]
                                 
 type FPayload name = Payload name (FNode name)
 
