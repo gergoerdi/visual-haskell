@@ -106,7 +106,7 @@ builtinNames :: Map VarName BuiltinOp
 builtinNames = Map.fromList $ map (\op -> (builtinName op, op)) $ builtinOps
 
 fromName n | isExternalName n = mkOrig (nameModule n) (nameOccName n)
-           | otherwise = mkRdrUnqual (nameOccName n)
+           | otherwise = nameRdrName n
 
 fromBuiltinOp :: Name -> Maybe BuiltinOp
 fromBuiltinOp x = Map.lookup (fromName x) builtinNames
