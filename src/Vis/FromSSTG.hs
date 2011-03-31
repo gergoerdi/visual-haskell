@@ -96,6 +96,7 @@ builtinName op = mkOrig mod $ mkOccName varName name
           Error -> gHC_ERR          
           IrrefutPatError -> cONTROL_EXCEPTION_BASE
           PatError -> cONTROL_EXCEPTION_BASE
+          RunMainIO -> gHC_TOP_HANDLER
           _ -> gHC_INTEGER
         name = case op of
           ToInt -> "toInt#"
@@ -103,6 +104,7 @@ builtinName op = mkOrig mod $ mkOccName varName name
           _ -> uncapitalize $ show name
         uncapitalize (c:cs) = toLower c : cs  
         
+builtinNames :: Map VarName BuiltinOp
 builtinNames = Map.fromList $ map (\op -> (builtinName op, op)) $ builtinOps
 
 integerNames = Set.fromList (map fromName [smallIntegerName, plusIntegerName, timesIntegerName]) `Set.union`
