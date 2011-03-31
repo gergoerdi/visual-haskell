@@ -15,6 +15,7 @@ import Data.STRef
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Monoid
+import Data.Char
 
 import RdrName
 import OccName
@@ -98,14 +99,15 @@ noLoc = H.SrcLoc "foo" 0 0 -- error "No location"
 projectPayload :: FPayload VarName -> H.HsExp
 projectPayload (Lambda [] node) = projectNode node
 projectPayload (Lambda vars node) = H.HsLambda noLoc (map (H.HsPVar . projectName) vars) $ projectNode node
-projectPayload (ParamRef x) = H.HsVar $ H.UnQual $ projectName x
-projectPayload (Literal lit) = H.HsLit $ projectLit lit
-  
+projectPayload (ParamRef x) = H.HsVar . H.UnQual $ projectName x
+projectPayload (Literal lit) = H.HsLit $ projectLit lit  
+projectPayload (BuiltinOp op) = H.HsVar . H.UnQual . H.HsIdent $ uncapitalize $ show op -- TODO: merge with FromSSTG's buitlinName                   
+  where uncapitalize (c:cs) = toLower c : cs
 projectPayload (App e args) = toApp (projectNode e:map projectNode args)
 projectPayload (PrimApp op args) = toApp $ fun:(map projectNode args)
-  where fun = H.HsVar $ H.UnQual $ H.HsIdent $ show op
+  where fun = H.HsVar . H.UnQual . H.HsIdent $ show op
 projectPayload (ConApp c args) = toApp $ con:(map projectNode args)
-  where con = H.HsCon $ H.UnQual $ projectName c
+  where con = H.HsCon . H.UnQual $ projectName c
 projectPayload (Case e alts) = H.HsCase (projectNode e) $ map projectAlt alts
   where projectAlt (Alt pat node) = H.HsAlt noLoc (projectPat pat) (H.HsUnGuardedAlt $ projectNode node) []
 
