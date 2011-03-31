@@ -50,7 +50,7 @@ data BuiltinOp = SmallInteger
                | TimesInteger
                | ToInt
                | EqInteger
-               | NEqInteger
+               | NeqInteger
                | CompareInteger
                | LtInteger
                | LeInteger
