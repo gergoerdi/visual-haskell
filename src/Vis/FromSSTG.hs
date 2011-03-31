@@ -125,7 +125,7 @@ debugNames = Set.fromList $ map mkName ["debugErrLn"]
         mod = mkPrimModule (fsLit "GHC.Debug")
 
 fromName n | isExternalName n = mkOrig (nameModule n) (nameOccName n)
-           | otherwise = nameRdrName n
+           | otherwise = mkRdrUnqual (nameOccName n)
 
 fromPrimOp :: Name -> Maybe (FromSSTG s (CNode s VarName))
 fromPrimOp x | x `Set.member` primNames = trace (unwords ["TODO:", "prim:", showSDoc . ppr $ x]) $ 
@@ -180,11 +180,11 @@ fromRhs (SStgRhsClosure update xs expr) =
         vars = map fromName xs
           
 
-fromSSTG :: [SStgBindingGroup Name] -> FromSSTG s [CNode s VarName]
+fromSSTG :: [SStgBindingGroup Name] -> FromSSTG s (Map VarName (CNode s VarName))
 -- fromSSTG [] = asks (map getNode . Map.toList)
 --   where getNode (_, LetBound node) = node
 --         getNode (x, Param) = error . unwords $ ["Escaped parameter:", showSDoc . ppr $ x]
 -- fromSSTG (g:gs) = withBindings g $ fromSSTG gs
-fromSSTG gs = withBindings (concat gs) $ asks (map getNode . Map.toList)
-  where getNode (_, LetBound node) = node
-        getNode (x, Param) = error . unwords $ ["Escaped parameter:", showSDoc . ppr $ x]
+fromSSTG gs = withBindings (concat gs) $ asks (Map.mapWithKey getNode)
+  where getNode _ (LetBound node) = node
+        getNode x Param = error . unwords $ ["Escaped parameter:", showSDoc . ppr $ x]

@@ -2,12 +2,16 @@ module Main where
 
 import Language.SSTG.Syntax
 import Language.SSTG.Serialization
+import Language.SSTG.GHC.CompileToSTG
 
 import Vis.FromSSTG
 import Vis.Flatten
 import Vis.ToSource
 import Vis.CNode
 import Vis.Reduce
+
+import Data.Map (Map, (!))
+import qualified Data.Map as Map
 
 import System.Environment (getArgs)
 import Control.Monad.ST.Strict
@@ -62,11 +66,21 @@ test_stg = SStgBinding test $ SStgRhsClosure Updatable [] $
         ones = var 103 "ones"
 
 main = do
-  let fnodes = runST $ runCNodeM $ do
-        [cnodeMap, cnodeTest] <- runFromSSTG (fromSSTG [[map_stg, test_stg]])
-        fnode1 <- flatten cnodeTest
-        reduceWHNF cnodeTest
-        fnode2 <- flatten cnodeTest
-        return [fnode1, fnode2]
-      srcs = map toSource fnodes
-  mapM_ (putStrLn . prettyPrint) srcs
+  -- stgs <- concat <$> (mapM readStgb $ map (\p -> "../lib/" ++ p ++ ".stgb") ["ghc-prim"])
+  -- cr <- compileToStg ["../test/first.hs"]
+  -- let stgProg = map (simplifyBinding . fst) $ concatMap snd $ cr_stgs cr
+      
+  let fnode = runST $ runCNodeM $ do
+        -- cmap <- runFromSSTG (fromSSTG $ stgs ++ stgProg)
+        cmap <- runFromSSTG (fromSSTG [[map_stg, test_stg]])
+        let testName = mkRdrUnqual $ mkVarOcc "test"
+            cnodeTest = cmap!testName
+        fnode <- flatten cnodeTest
+        return fnode
+        -- let step = do
+        --       fnode <- flatten cnodeTest
+        --       reduceStep cnodeTest
+        --       return fnode
+        -- replicateM 3 step
+      src = toSource fnode
+  putStrLn . prettyPrint $ src

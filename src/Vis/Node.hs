@@ -37,11 +37,11 @@ data Alt name node = Alt { altPattern :: Pat name,
                
 data Payload name node = Lambda [name] node
                        | ParamRef name
-                       | Literal Literal
+                       | BuiltinOp !BuiltinOp
+                       | Literal !Literal
                        | App node [node]
+                       | PrimApp !PrimOp [node]
                        | Case node [Alt name node]
-                       | PrimApp PrimOp [node]
-                       | BuiltinApp BuiltinOp [node]
                        | ConApp name [node]
                        deriving Show
                                 
@@ -81,6 +81,8 @@ data BuiltinOp = SmallInteger
                | XorInteger
                  
                | DebugErrLn
+                 
+               | RunMainIO
                  
                | IrrefutPatError
                | PatError
