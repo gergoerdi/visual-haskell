@@ -86,10 +86,8 @@ fromExpr (SStgCase x expr (a:as)) = do
   mkCNode Nothing False $ Case node alts
 fromExpr (SStgLet bindings body) = withBindings bindings $ fromExpr body
 
-primNames = Set.fromList $ map getName wiredInIds
-
-builtinName ToInt = mkOrig gHC_INTEGER $ mkOccName varName "toInt#"
-builtinName op = mkOrig mod $ mkOccName varName name
+builtinName :: BuiltinOp -> RdrName
+builtinName op = mkOrig mod $ mkVarOcc name
   where mod = case op of
           DebugErrLn -> mkPrimModule $ fsLit "GHC.Debug"
           RealWorld -> gHC_PRIM
@@ -101,61 +99,27 @@ builtinName op = mkOrig mod $ mkOccName varName name
         name = case op of
           ToInt -> "toInt#"
           RealWorld -> "realWorld#"
-          _ -> uncapitalize $ show name
+          _ -> uncapitalize $ show op
         uncapitalize (c:cs) = toLower c : cs  
         
 builtinNames :: Map VarName BuiltinOp
 builtinNames = Map.fromList $ map (\op -> (builtinName op, op)) $ builtinOps
 
-integerNames = Set.fromList (map fromName [smallIntegerName, plusIntegerName, timesIntegerName]) `Set.union`
-               Set.fromList (map mkName ["toInt#", 
-                                         "eqInteger", "neqInteger", 
-                                         "compareInteger", "ltInteger", "geInteger", "gtInteger", "leInteger",
-                                         "quotRemInteger", "remInteger", "quotInteger",
-                                         "divModInteger", "divInteger", "modInteger",
-                                         "negateInteger", "minusInteger", "absInteger", "signumInteger",
-                                         "floatFromInteger", "encodeFloatInteger", 
-                                         "doubleFromInteger", "encodeDoubleInteger", "decodeDoubleInteger",
-                                         "wordToInteger", "integerToWord",
-                                         "shiftLInteger", "shiftRInteger",
-                                         "orInteger", "andInteger", "complementInteger", "xorInteger"
-                                        ])
-                 where mkName = mkOrig gHC_INTEGER . mkOccName varName
-
-debugNames = Set.fromList $ map mkName ["debugErrLn"]
-  where mkName = mkOrig mod . mkOccName varName
-        mod = mkPrimModule (fsLit "GHC.Debug")
-
 fromName n | isExternalName n = mkOrig (nameModule n) (nameOccName n)
            | otherwise = mkRdrUnqual (nameOccName n)
 
-fromPrimOp :: Name -> Maybe (FromSSTG s (CNode s VarName))
-fromPrimOp x | x `Set.member` primNames = trace (unwords ["TODO:", "prim:", showSDoc . ppr $ x]) $ 
-                                          Just $ (mkCNode (Just v) False $ ParamRef v)
-             | otherwise = Nothing
-  where v = fromName x
-                                                              
-fromIntegerOp :: Name -> Maybe (FromSSTG s (CNode s VarName))
-fromIntegerOp x | v `Set.member` integerNames = trace (unwords ["TODO:", "integer:", showRdrName v]) $ 
-                                                Just $ mkCNode (Just v) False $ ParamRef v
-                | v `Set.member` debugNames = trace (unwords ["TODO:", "integer:", showRdrName v]) $ 
-                                              Just $ mkCNode (Just v) False $ ParamRef v
-                | otherwise = Nothing
-  where v = fromName x
+fromBuiltinOp :: Name -> Maybe BuiltinOp
+fromBuiltinOp x = Map.lookup (fromName x) builtinNames
 
 fromVar :: Name -> FromSSTG s (CNode s VarName)
-fromVar x | Just node <- (fromPrimOp x) `mplus` (fromIntegerOp x) = node
+fromVar x | Just op <- fromBuiltinOp x = mkCNode Nothing False $ BuiltinOp op 
           | otherwise = do
   let v = fromName x            
   lookup <- lookupBind v
   case lookup of
-    Nothing -> do
-      vars <- asks Map.keys      
-      error . unlines $ [unwords ["Unbound variable:", showRdrName v]] -- ,
-                         -- unwords $ map showRdrName vars]
+    Nothing -> error . unlines $ [unwords ["Unbound variable:", showRdrName v]]
     Just Param -> mkCNode Nothing False $ ParamRef v
     Just (LetBound node) -> return node
-    -- _ -> mkCNode Nothing False $ ParamRef x
     
 fromAlt :: VarName -> SStgAlt Name -> FromSSTG s (Alt VarName (CNode s VarName))
 fromAlt var (SStgAlt pat expr) = let (pat', vars) = fromPat pat
