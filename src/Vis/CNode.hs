@@ -1,70 +1,67 @@
-{-# LANGUAGE DeriveFunctor, GeneralizedNewtypeDeriving, MultiParamTypeClasses, FunctionalDependencies, FlexibleInstances, UndecidableInstances #-}
+{-# LANGUAGE DeriveFunctor, GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE FlexibleInstances, UndecidableInstances #-}
 module Vis.CNode (CPayload, CNode(cnodeSerial, cnodeName), CThunk(..),
                   CNodeM, runCNodeM, 
                   readThunk, writeThunk, 
-                  MonadCNode(..), liftST, mkCNode, mkCNode_) 
+                  MonadCNode(..), mkCNode, mkCNode_) 
        where
 
 import Vis.Node
 
-import Data.STRef
+import Data.IORef
 import Data.Function (on)
 import Data.Ord (comparing)
 import Control.Applicative
-import Control.Monad.ST
 import Control.Monad.State
 
-type CPayload s name = Payload name (CNode s name)
-
 -- A node in the cyclic representation
-data CNode s name = CNode { cnodeSerial :: Serial, 
-                            cnodeName :: Maybe name,
-                            cnodeThunk :: STRef s (CThunk s name) }
+data CNode name = CNode { cnodeSerial :: Serial, 
+                          cnodeName :: Maybe name,
+                          cnodeThunk :: IORef (CThunk name) }
                
-data CThunk s name = CThunk { cthunkReentrant :: Bool,
-                              cthunkPayload :: CPayload s name }
+data CThunk name = CThunk { cthunkReentrant :: Bool,
+                              cthunkPayload :: CPayload name }
 
-instance Eq (CNode s name) where
+type CPayload name = Payload name (CNode name)
+
+instance Eq (CNode name) where
   (==) = (==) `on` cnodeSerial
 
-instance Ord (CNode s name) where
-  compare = comparing cnodeSerial
+instance Ord (CNode name) where
+  compare = compare `on` cnodeSerial
                      
+newtype CNodeM a = CNodeM { unCNodeM :: StateT [Serial] IO a }
+                 deriving (Functor, Applicative, Monad, MonadIO)
 
-newtype CNodeM s a = CNodeM { unCNodeM :: StateT [Serial] (ST s) a }
-                   deriving (Functor, Applicative, Monad)
-
-runCNodeM :: CNodeM s a -> ST s a
+runCNodeM :: CNodeM a -> IO a
 runCNodeM f = evalStateT (unCNodeM f) [firstSerial..]
 
-readThunk :: MonadCNode m s => CNode s name -> m (CThunk s name)
-readThunk = liftST . readSTRef . cnodeThunk
-
-writeThunk :: MonadCNode m s => CNode s name -> (CThunk s name) -> m ()
-writeThunk node = liftST . writeSTRef (cnodeThunk node)
-
-class (Monad m) => MonadCNode m s | m -> s where
-  liftCNode :: CNodeM s a -> m a  
+class (Monad m) => MonadCNode m where
+  liftCNode :: CNodeM a -> m a  
   
-instance MonadCNode (CNodeM s) s where
+instance MonadCNode CNodeM where
   liftCNode = id
   
-instance (MonadTrans t, Monad (t m), Monad m, MonadCNode m s) => MonadCNode (t m) s where
+instance (MonadTrans t, Monad (t m), Monad m, MonadCNode m) => MonadCNode (t m) where
   liftCNode = lift . liftCNode
 
-liftST :: MonadCNode m s => ST s a -> m a  
-liftST = liftCNode . CNodeM . lift
+readThunk :: MonadCNode m => CNode name -> m (CThunk name)
+readThunk = liftCNode . liftIO . readIORef . cnodeThunk
 
+writeThunk :: MonadCNode m => CNode name -> CThunk name -> m ()
+writeThunk node = liftCNode . liftIO . writeIORef (cnodeThunk node)
+
+mkCNodeI :: MonadCNode m => Maybe name -> CThunk name -> m (CNode name)
 mkCNodeI name thunk = do
   serial <- liftCNode nextSerial
-  payload <- liftST (newSTRef thunk)
+  payload <- liftCNode $ liftIO (newIORef thunk)
   return $ CNode serial name payload
 
-mkCNode :: MonadCNode m s => Maybe name -> Bool -> CPayload s name -> m (CNode s name)
+mkCNode :: MonadCNode m => Maybe name -> Bool -> CPayload name -> m (CNode name)
 mkCNode name reentrant p = mkCNodeI name (CThunk reentrant p)
 
-mkCNode_ :: MonadCNode m s => Maybe name -> m (CNode s name)
+mkCNode_ :: MonadCNode m => Maybe name -> m (CNode name)
 mkCNode_ name = mkCNodeI name $ error "Untied knot"
 
-nextSerial :: CNodeM s Serial
+nextSerial :: CNodeM Serial
 nextSerial = CNodeM (gets head <* modify tail)

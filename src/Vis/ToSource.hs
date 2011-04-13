@@ -21,6 +21,7 @@ import RdrName
 import OccName
 import Literal
 import FastString
+import Name
 
 toSource :: FNode VarName -> H.HsExp
 toSource = parenExpr . projectNode
@@ -91,6 +92,8 @@ projectBind (Bind var def) = H.HsPatBind noLoc
 projectFName (Given n) = projectName n
 projectFName (Generated s) = H.HsIdent $ "v" ++ show (unSerial s)
 
+-- projectName (Exact n) = (if isSymOcc occ then H.HsSymbol else H.HsIdent) $ (occNameString occ ++ show (nameUnique n))
+--   where occ = nameOccName n
 projectName name = (if isSymOcc occ then H.HsSymbol else H.HsIdent) $ occNameString occ
   where occ = rdrNameOcc name
 
@@ -103,7 +106,7 @@ projectPayload (ParamRef x) = H.HsVar . H.UnQual $ projectName x
 projectPayload (Literal lit) = H.HsLit $ projectLit lit  
 projectPayload (BuiltinOp op) = H.HsVar . H.UnQual . H.HsIdent $ uncapitalize $ show op -- TODO: merge with FromSSTG's buitlinName                   
   where uncapitalize (c:cs) = toLower c : cs
-projectPayload (App e args) = toApp (projectNode e:map projectNode args)
+projectPayload (App e args) = toApp (paren (projectNode e):map projectNode args)
 projectPayload (PrimApp op args) = toApp $ fun:(map projectNode args)
   where fun = H.HsVar . H.UnQual . H.HsIdent $ show op
 projectPayload (ConApp c args) = toApp $ con:(map projectNode args)
