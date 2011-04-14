@@ -73,9 +73,9 @@ fromExpr (SStgOpApp op args) = mkCNode Nothing False =<< PrimApp prim <$> mapM f
   where prim = case op of
           StgPrimOp prim -> prim
           StgPrimCallOp call -> error . unwords $ ["Unimplemented", "StgPrimCallOp", unpackFS fs]
-            where PrimCall fs = call
+            where PrimCall fs pkgId = call
           StgFCallOp (CCall ccall) _ -> error . unwords $ ["Unimplemented", "StgFCallOp", unpackFS target]
-            where CCallSpec (StaticTarget target) conv safety = ccall
+            where CCallSpec (StaticTarget target mpkgId) conv safety = ccall
 fromExpr (SStgLam xs body) = 
   withParams vars $
     mkCNode Nothing False =<< Lambda vars <$> fromExpr body
