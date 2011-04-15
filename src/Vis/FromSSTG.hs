@@ -27,7 +27,7 @@ import Data.Char
 
 import Outputable
 
-data VarBind = LetBound (CNode VarName)
+data VarBind = LetBound CNode
              | Param
 
 type FromSSTG a = ReaderT (Map VarName VarBind) CNodeM a
@@ -58,14 +58,14 @@ withBindings bindings f =
     
 lookupBind x = asks $ Map.lookup $ x
 
-setVar :: VarName -> CNode VarName -> FromSSTG ()
+setVar :: VarName -> CNode -> FromSSTG ()
 setVar x node = do
   payload <- readThunk node
   lookup <- asks (lookupBind x)
   case lookup of
     Just (LetBound node') -> writeThunk node' payload    
 
-fromExpr :: SStgExpr Name -> FromSSTG (CNode VarName)
+fromExpr :: SStgExpr Name -> FromSSTG CNode
 fromExpr (SStgApp f args) = mkCNode Nothing False =<< App <$> fromVar f <*> mapM fromArg args
 fromExpr (SStgLit lit) = mkCNode Nothing False $ Literal lit
 fromExpr (SStgConApp con args) = mkCNode Nothing False =<< ConApp (fromName con) <$> mapM fromArg args
@@ -117,7 +117,7 @@ fromName n | isExternalName n = mkOrig (nameModule n) (nameOccName n)
 fromBuiltinOp :: Name -> Maybe BuiltinOp
 fromBuiltinOp x = Map.lookup (fromName x) builtinNames
 
-fromVar :: Name -> FromSSTG (CNode VarName)
+fromVar :: Name -> FromSSTG CNode
 fromVar x | Just op <- fromBuiltinOp x = mkCNode Nothing False $ BuiltinOp op 
           | otherwise = do
   let v = fromName x            
@@ -127,7 +127,7 @@ fromVar x | Just op <- fromBuiltinOp x = mkCNode Nothing False $ BuiltinOp op
     Just Param -> mkCNode Nothing False $ ParamRef v
     Just (LetBound node) -> return node
     
-fromAlt :: VarName -> SStgAlt Name -> FromSSTG (Alt VarName (CNode VarName))
+fromAlt :: VarName -> SStgAlt Name -> FromSSTG (Alt VarName CNode)
 fromAlt var (SStgAlt pat expr) = let (pat', vars) = fromPat pat
                                  in Alt (PAsPat var pat') <$> withParams vars (fromExpr expr)
 
@@ -137,11 +137,11 @@ fromPat (SStgPatData con xs) = (PConApp (fromName con) $ map PVar vars, vars)
   where vars = map fromName xs
 fromPat (SStgPatLit lit) = (PLiteral lit, [])
 
-fromArg :: SStgArg Name -> FromSSTG (CNode VarName)
+fromArg :: SStgArg Name -> FromSSTG CNode
 fromArg (SStgArgVar v) = fromVar v
 fromArg (SStgArgLit lit) = mkCNode Nothing False $ Literal lit
 
-fromRhs :: SStgRhs Name -> FromSSTG (CNode VarName)
+fromRhs :: SStgRhs Name -> FromSSTG CNode
 fromRhs (SStgRhsCon con args) = fromExpr (SStgConApp con args)
 fromRhs (SStgRhsClosure update xs expr) = 
   withParams vars $ 
@@ -152,7 +152,7 @@ fromRhs (SStgRhsClosure update xs expr) =
         vars = map fromName xs
           
 
-fromSSTG :: [SStgBindingGroup Name] -> FromSSTG (Map VarName (CNode VarName))
+fromSSTG :: [SStgBindingGroup Name] -> FromSSTG (Map VarName CNode)
 -- fromSSTG [] = asks (map getNode . Map.toList)
 --   where getNode (_, LetBound node) = node
 --         getNode (x, Param) = error . unwords $ ["Escaped parameter:", showSDoc . ppr $ x]

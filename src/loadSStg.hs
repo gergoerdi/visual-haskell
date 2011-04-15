@@ -8,6 +8,7 @@ import Vis.Flatten
 import Vis.ToSource
 import Vis.CNode
 
+import qualified Data.Map as Map
 import System.Environment (getArgs)
 import Control.Monad.ST.Strict
 import Control.Applicative
@@ -23,9 +24,8 @@ main = do
   stgbs <- getArgs
   groups <- concat <$> mapM readStgb stgbs
   
-  let names = runST $ runCNodeM $ do
-        cnodes <- runFromSSTG (fromSSTG groups)
-        return $ map cnodeName cnodes
-  forM_ (catMaybes names) $ \name -> do
-    putStrLn $ showRdrName name
+  names <- runCNodeM $ do
+    cnodes <- runFromSSTG (fromSSTG groups)
+    return $ Map.keys cnodes
+  mapM_ (putStrLn . showRdrName) names
   

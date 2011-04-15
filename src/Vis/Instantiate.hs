@@ -13,21 +13,21 @@ import Control.Monad.RWS
 import Control.Monad.Writer
 import Control.Arrow (first, second, (***))
 
-type NodeMap name = Map (CNode name) (CNode name)
-type FormalMap name = Map name (CNode name)
+type NodeMap = Map CNode CNode
+type FormalMap = Map VarName CNode
 
-type Cloner name a = RWST (FormalMap name, Set (CNode name)) () (NodeMap name) CNodeM a
+type Cloner a = RWST (FormalMap, Set CNode) () NodeMap CNodeM a
 
-withoutVars :: Ord name => [name] -> Cloner name a -> Cloner name a
+withoutVars :: [VarName] -> Cloner a -> Cloner a
 withoutVars vars = local (first removeVars)
   where removeVars formals = foldl (flip Map.delete) formals vars
 
 clone = instantiate mempty
 
-instantiate :: Ord name => FormalMap name -> CNode name -> CNodeM (CNode name)
+instantiate :: FormalMap -> CNode -> CNodeM CNode
 instantiate actuals node = fst <$> (evalRWST (cloneNode node) (actuals, mempty) (mempty))
 
-cloneNode :: Ord name => CNode name -> Cloner name (CNode name)
+cloneNode :: CNode -> Cloner CNode
 cloneNode node = do
   thunk <- lift $ readThunk node
   if cthunkReentrant thunk
@@ -52,7 +52,7 @@ cloneNode node = do
               lift $ writeThunk node' $ CThunk False payload'
               return node'                    
 
-clonePayload :: Ord name => CPayload name -> Cloner name (CPayload name)
+clonePayload :: CPayload -> Cloner CPayload
 clonePayload (Lambda pat node) = Lambda pat <$> cloneNode node
 clonePayload p@(Literal lit) = return p
 clonePayload (App e args) = App <$> cloneNode e <*> mapM cloneNode args

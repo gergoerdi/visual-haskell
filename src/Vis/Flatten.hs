@@ -23,7 +23,7 @@ data Occurance = Once
 
 newtype SeenNodes = SeenNodes { unSeenNodes :: Map Serial Occurance }
 
-sharedNodes :: CNode name -> CNodeM [Serial]
+sharedNodes :: CNode -> CNodeM [Serial]
 sharedNodes node = map fst <$> filter ((== Many) . snd) <$> Map.toAscList <$> 
                      unSeenNodes <$> execStateT (collectNode node) (SeenNodes mempty)
   where collectNode node = do
@@ -51,7 +51,7 @@ newtype VarMap = VarMap { unVarMap :: Map Serial (FName VarName) }
 
 type ToSource a = RWST (Set Serial) [Bind VarName] VarMap CNodeM a
 
-ensureVar :: CNode VarName -> ToSource (FNode VarName) -> ToSource (FNode VarName)
+ensureVar :: CNode -> ToSource (FNode VarName) -> ToSource (FNode VarName)
 ensureVar node f | Just name <- externalName = return $ FVarRef (Given name)
   where externalName = do
           name <- cnodeName node
@@ -82,20 +82,20 @@ scope f = do
     [] -> expr
     _ -> FLet binds expr    
 
-flatten :: CNode VarName -> CNodeM (FNode VarName)
+flatten :: CNode -> CNodeM (FNode VarName)
 flatten node = do
   shareds <- sharedNodes node 
   (src, []) <- evalRWST (scope $ flattenNode node) (Set.fromAscList shareds) (VarMap mempty)
   return src
 
-flattenNode :: CNode VarName -> ToSource (FNode VarName)
+flattenNode :: CNode -> ToSource (FNode VarName)
 flattenNode node = ensureVar node $ do
   FNode <$> (readThunk node >>= flattenThunk)
   
-flattenThunk :: CThunk VarName -> ToSource (FPayload VarName)
+flattenThunk :: CThunk -> ToSource (FPayload VarName)
 flattenThunk = flattenPayload . cthunkPayload
   
-flattenPayload :: CPayload VarName -> ToSource (FPayload VarName)
+flattenPayload :: CPayload -> ToSource (FPayload VarName)
 flattenPayload (Lambda pat node) = Lambda pat <$> flattenNode node
 flattenPayload (App e args) = liftM2 App (flattenNode e) (mapM flattenNode args)
 flattenPayload (BuiltinOp op) = return $ BuiltinOp op
