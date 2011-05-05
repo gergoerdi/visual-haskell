@@ -39,17 +39,17 @@ parenP p@(H.HsPVar _) = p
 parenP p@(H.HsPTuple _) = p
 parenP p = H.HsPParen p
           
-parenExpr (H.HsApp (H.HsApp op left) right) | Just opName <- getInfix = H.HsInfixApp left' opName right'
-  where getInfix = case op of
-          H.HsCon c@(H.Special H.HsCons) -> Just $ H.HsQConOp c
-          H.HsVar sym@(H.UnQual (H.HsSymbol _)) -> Just $ H.HsQVarOp sym
-          _ -> Nothing
+-- parenExpr (H.HsApp (H.HsApp op left) right) | Just opName <- getInfix = H.HsInfixApp left' opName right'
+--   where getInfix = case op of
+--           H.HsCon c@(H.Special H.HsCons) -> Just $ H.HsQConOp c
+--           H.HsVar sym@(H.UnQual (H.HsSymbol _)) -> Just $ H.HsQVarOp sym
+--           _ -> Nothing
         
-        forceTopParen e@(H.HsApp _ _) = paren e
-        forceTopParen e = e
+--         -- forceTopParen e@(H.HsApp _ _) = paren e
+--         -- forceTopParen e = e
         
-        left' = forceTopParen $ parenExpr left
-        right' = forceTopParen $ parenExpr right          
+--         left' = paren $ parenExpr left
+--         right' = paren $ parenExpr right          
 parenExpr (H.HsApp e f) = H.HsApp (parenExpr e) (paren (parenExpr f))
 parenExpr (H.HsLambda loc pats body) = H.HsLambda loc pats $ parenExpr body
 parenExpr (H.HsLet decls body) = H.HsLet (map parenDecl decls) $ parenExpr body
@@ -106,7 +106,7 @@ projectPayload (ParamRef x) = H.HsVar . H.UnQual $ projectName x
 projectPayload (Literal lit) = H.HsLit $ projectLit lit  
 projectPayload (BuiltinOp op) = H.HsVar . H.UnQual . H.HsIdent $ uncapitalize $ show op -- TODO: merge with FromSSTG's buitlinName                   
   where uncapitalize (c:cs) = toLower c : cs
-projectPayload (App e args) = toApp (paren (projectNode e):map projectNode args)
+projectPayload (App e args) = toApp ((projectNode e):map projectNode args)
 projectPayload (PrimApp op args) = toApp $ fun:(map projectNode args)
   where fun = H.HsVar . H.UnQual . H.HsIdent $ show op
 projectPayload (ConApp c args) = toApp $ con:(map projectNode args)

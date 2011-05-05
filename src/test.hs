@@ -50,4 +50,4 @@ main = do
           liftIO . putStrLn . prettyPrint . toSource $ fnode
           reduceStep cnodeTest
           return fnode
-    replicateM_ 5 step
+    replicateM_ 15 step

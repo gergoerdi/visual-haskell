@@ -1,55 +1,58 @@
 {-# LANGUAGE NoMonomorphismRestriction #-}
-module Vis.Instantiate (clone, instantiate, FormalMap) where
+module Vis.Instantiate (instantiate, FormalMap) where
 
 import Vis.Node
 import Vis.CNode
 
 import Control.Applicative
-import Data.Set (Set)
-import qualified Data.Set as Set
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Control.Monad.RWS
 import Control.Monad.Writer
-import Control.Arrow (first, second, (***))
+import Control.Arrow (first)
+import Data.Traversable (traverse)
 
 type NodeMap = Map CNode CNode
 type FormalMap = Map VarName CNode
 
-type Cloner a = RWST (FormalMap, Set CNode) () NodeMap CNodeM a
+type Cloner a = RWST (FormalMap, Maybe CNode) () NodeMap CNodeM a
 
 withoutVars :: [VarName] -> Cloner a -> Cloner a
 withoutVars vars = local (first removeVars)
   where removeVars formals = foldl (flip Map.delete) formals vars
 
-clone = instantiate mempty
+clone = instantiate Nothing Map.empty
 
-instantiate :: FormalMap -> CNode -> CNodeM CNode
-instantiate actuals node = fst <$> (evalRWST (cloneNode node) (actuals, mempty) (mempty))
+instantiate :: Maybe CNode -> FormalMap -> CNode -> CNodeM CNode
+instantiate recurrence actuals node = do
+  reentrant <- (False `maybe` cthunkReentrant) <$> (traverse readThunk recurrence)
+  fst <$> (evalRWST (cloneNodeI True node) (actuals, if reentrant then recurrence else Nothing) (mempty))
 
-cloneNode :: CNode -> Cloner CNode
-cloneNode node = do
-  thunk <- lift $ readThunk node
-  if cthunkReentrant thunk
-    then return node
-    else
+cloneNode = cloneNodeI False
+
+cloneNodeI :: Bool -> CNode -> Cloner CNode
+cloneNodeI top node = do
+  isRoot <- asks $ (Just node ==) . snd
+  if not top && isRoot then return node
+    else do
+      thunk <- lift $ readThunk node    
       case cthunkPayload thunk of
         ParamRef x -> do
-          actual <- asks (Map.lookup x . fst)
+          actual <- asks $ Map.lookup x . fst
           case actual of
             Just actual -> return actual
             Nothing -> cloneNode' thunk
         _ -> cloneNode' thunk
     
-  where cloneNode' thunk = do
+  where cloneNode' (CThunk r payload) = do
           cloned <- gets (Map.lookup node)
           case cloned of 
             Just node' -> return node'
             Nothing -> do
-              node' <- lift $ mkCNode_ $ (if cthunkReentrant thunk then Nothing else cnodeName node)
+              node' <- lift $ mkCNode_ $ cnodeName node -- $ (if cthunkReentrant thunk then Nothing else cnodeName node)
               modify (Map.insert node node')              
-              payload' <- clonePayload (cthunkPayload thunk)
-              lift $ writeThunk node' $ CThunk False payload'
+              payload' <- clonePayload payload
+              lift $ writeThunk node' $ CThunk r payload'
               return node'                    
 
 clonePayload :: CPayload -> Cloner CPayload
